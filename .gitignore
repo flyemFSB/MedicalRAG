@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+
+# uv
+.uv/
+
+# Node / pnpm
+node_modules/
+*.tsbuildinfo
+.turbo/
+apps/web/dist/
+.tanstack/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local dev artifacts
+*.log
+tsc-output.txt
+.scratch-shots/
+.playwright-mcp/
+.verify/
+
+# Local dev data
+apps/api/dev.db
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

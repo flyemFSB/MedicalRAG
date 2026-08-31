@@ -1,0 +1,207 @@
+/* MedicalRAG — Vercel 单色设计语言（Tailwind v4 + shadcn CSS 变量体系）。
+   规范见 DESIGN.md：单色画布（白底黑字灰阶）、Vercel 蓝 #0070f3 唯一功能色、
+   Geist Sans/Mono、连续画布（去岛/去光晕/去浮影）、发丝边框、默认静止。
+   医疗安全边界 = 黑色对比带（--vbg-surface-contrast）。 */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* 仅 hover 能力设备：触屏不隐藏行操作（见 data-table.tsx）。 */
+@custom-variant hoverable (&:is(@media (hover: hover)));
+
+:root {
+  /* --- shadcn 变量（映射到下方品牌/语义 token） --- */
+  --background: #ffffff;                            /* 主画布（唯一连续表面） */
+  --foreground: #0a0a0a;                            /* 主文本 ≈18:1 */
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;                               /* 黑主按钮（Vercel 句法） */
+  --primary-foreground: #ffffff;
+  --secondary: #fafafa;                             /* 次表面（白钮/次级面板） */
+  --secondary-foreground: #0a0a0a;
+  --muted: #fafafa;                                 /* 面板/次级表面 */
+  --muted-foreground: #555555;                      /* 次要文本 ≈7.6:1 */
+  --accent: #f2f2f2;                                /* hover wash（中性灰） */
+  --accent-foreground: #0a0a0a;
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: #ffffff;
+  --border: oklch(0 0 0 / 0.08);                    /* 发丝边框（subtle） */
+  --input: oklch(0 0 0 / 0.14);                     /* 输入框边框（default） */
+  --ring: #0070f3;                                  /* focus ring（Vercel 蓝） */
+  --radius: 0.375rem;                               /* 6px 基准；圆角克制 ≤8px */
+
+  /* --- 品牌中性色（连续画布灰阶；chroma 0 不偏暖冷） --- */
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-panel: #fafafa;
+  --color-panel-strong: #f2f2f2;
+  --color-ink: #0a0a0a;
+  --color-body: #2e2e2e;                            /* 正文 ≈12:1 */
+  --color-faint: #767676;                           /* disabled/placeholder ≈4.8:1 */
+
+  /* --- 品牌 accent（Vercel 蓝 #0070f3；唯一功能色）。
+     注意：--color-accent 是 shadcn 的 hover wash（中性灰），
+     品牌蓝一律走 -accent-ink / -accent-hover / -accent-soft / -accent-soft-ink。 --- */
+  --color-accent: #f2f2f2;                          /* shadcn hover wash（灰） */
+  --color-accent-hover: #0061cf;
+  --color-accent-ink: #0070f3;                      /* 链接/强调文本/选中填充 ≈4.8:1 */
+  --color-accent-soft: #eaf3ff;                     /* 浅蓝 wash */
+  --color-accent-soft-ink: #0a5fb8;                 /* accent-soft 上的文本 ≈6:1 */
+  --color-primary-hover: #2a2a2a;                   /* 黑按钮 hover（深灰） */
+
+  /* --- 语义状态（DESIGN §3.3；soft 变体 + 文案/符号非颜色线索） --- */
+  --color-success: oklch(0.52 0.12 158);
+  --color-warning: oklch(0.6 0.13 70);
+  --color-error: oklch(0.55 0.2 25);
+  --color-info: oklch(0.55 0.15 252);
+  --color-medical: oklch(0.5 0.21 24);              /* 安全边界（最高信号） */
+  --color-medical-strong: #ff5a5f;                  /* 深色对比带上的安全红（≥4.5:1） */
+  --color-success-soft: oklch(0.96 0.02 158);
+  --color-warning-soft: oklch(0.96 0.025 75);
+  --color-error-soft: oklch(0.96 0.02 22);
+  --color-info-soft: oklch(0.96 0.02 252);
+  --color-medical-soft: oklch(0.96 0.02 22);
+
+  /* --- 语义 z-index（永不使用任意值） --- */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-modal-backdrop: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+  --z-tooltip: 60;
+
+  /* --- 语义动效（150–250ms，ease-out；默认静止） --- */
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* --- 悬浮浮层唯一允许的极淡阴影（≤8px blur；DESIGN §6） --- */
+  --shadow-elevated: 0 1px 2px oklch(0 0 0 / 0.04), 0 4px 8px oklch(0 0 0 / 0.04);
+}
+
+/* --- 字体：Geist Sans/Mono（Google Fonts；index.html 加载） --- */
+@theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* --- 固定字号刻度（DESIGN §4.1；product register 不用 clamp） --- */
+@theme {
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.4;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.5;
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-subheading: 1.125rem;
+  --text-subheading--line-height: 1.4;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.3;
+  --text-heading-lg: 1.5rem;
+  --text-heading-lg--line-height: 1.25;
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.03em;
+  --text-label: 0.875rem;
+  --text-label--line-height: 1.4;
+  --text-metadata: 0.75rem;
+  --text-metadata--line-height: 1.4;
+}
+
+/* --- shadcn 变量 → Tailwind 工具类（@theme inline 引用运行时 CSS 变量） --- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-canvas: var(--color-canvas);
+  --color-surface: var(--color-surface);
+  --color-panel: var(--color-panel);
+  --color-panel-strong: var(--color-panel-strong);
+  --color-ink: var(--color-ink);
+  --color-body: var(--color-body);
+  --color-faint: var(--color-faint);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-ink: var(--color-accent-ink);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-soft-ink: var(--color-accent-soft-ink);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-info: var(--color-info);
+  --color-medical: var(--color-medical);
+  --color-medical-strong: var(--color-medical-strong);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-error-soft: var(--color-error-soft);
+  --color-info-soft: var(--color-info-soft);
+  --color-medical-soft: var(--color-medical-soft);
+
+  /* --- 圆角刻度：xs 2 / sm 4 / md 6 / lg 8 / xl 8（克制，卡片 ≤8px） --- */
+  --radius-xs: 2px;
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 10px);
+  --radius-4xl: calc(var(--radius) + 18px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: var(--color-ink);
+    color: #ffffff;
+  }
+}
+
+/* --- 减少动效（非可选） --- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- 骨架加载（内容加载用 skeleton，不用居中转圈） --- */
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-panel) 25%, var(--color-panel-strong) 50%, var(--color-panel) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

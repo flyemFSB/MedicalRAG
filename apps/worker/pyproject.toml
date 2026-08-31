@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "medicalrag-worker"
+version = "0.1.0"
+description = "MedicalRAG TaskIQ worker: ingestion stage jobs, outbox relay"
+requires-python = ">=3.14"
+dependencies = [
+  "medicalrag-core",
+  "medicalrag-infra",
+  # version-baseline §1 门禁 3：arq 0.28 依赖上界 redis<6 与钉版 redis-py 8.1 冲突，
+  # 按基线「备 TaskIQ 预案」改用 TaskIQ（redis-py 8.x 兼容）。
+  "taskiq>=0.11",
+  "redis[hiredis]>=8.1",
+  "taskiq-redis>=0.9",
+]
+
+[tool.uv.sources]
+medicalrag-core = { workspace = true }
+medicalrag-infra = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medicalrag_worker"]

@@ -1,0 +1,17 @@
+# Docker build context（仓库根）排除项：本地依赖与构建产物不进镜像上下文
+.venv/
+node_modules/
+**/node_modules/
+.git/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.turbo/
+**/dist/
+**/build/
+*.db
+test_milvus2.db
+infra/
+*.log
+.env

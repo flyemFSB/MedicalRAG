@@ -1,0 +1,8 @@
+{
+  "graphs": {
+    "agent": "./src/medicalrag_agent/entry.py:graph"
+  },
+  "auth": {
+    "path": "./src/medicalrag_agent/entry.py:authenticate"
+  }
+}

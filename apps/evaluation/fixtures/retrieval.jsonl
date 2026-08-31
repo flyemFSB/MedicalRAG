@@ -1,0 +1,2 @@
+{"question":"高血压降压目标","relevant_chunk_ids":["c1"],"candidate_chunk_ids":["c1","c2"],"scores":[0.9,0.3],"intent_id":"htn","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"胸痛","relevant_chunk_ids":[],"candidate_chunk_ids":["c9"],"scores":[0.2],"intent_id":"urgent","latency_ms":8,"answer":null,"ground_truth":null}

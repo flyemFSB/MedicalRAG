@@ -1,0 +1,11 @@
+packages:
+  - "apps/web"
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@assistant-ui/core@0.3.5'
+  - '@assistant-ui/react@0.15.4'
+  - '@assistant-ui/store@0.3.3'
+  - assistant-cloud@0.1.38
+  - assistant-stream@0.3.33
+  - safe-content-frame@0.0.26

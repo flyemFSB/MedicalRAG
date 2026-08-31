@@ -1,0 +1,92 @@
+# MedicalRAG CI（ADR 0080：文档门禁机器化）。
+# 提交级 = 格式/lint/typecheck/单元；PR 级 = 契约测试 + 安全审计 + 镜像构建。
+# 集成/E2E/eval-answer 属合并级，本地或发布流水线执行（见 AGENTS.md 测试门禁）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python lint/type/test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Pyright（basic 起步，ADR 0080）
+        run: uv run pyright
+      - name: Unit & contract tests（覆盖率门禁 80%）
+        run: uv run pytest --cov --cov-report=term-missing
+
+  web:
+    name: Web lint/type/test/build/contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm 12（ADR 0083）：官方 pnpm/setup 下载自包含 release 二进制并安装 runtime，
+      # 取代 pnpm/action-setup（仅支持 ≤10）+ actions/setup-node；版本读 packageManager。
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: pnpm install --frozen-lockfile
+      - name: OpenAPI 契约导出与漂移检查（ADR 0071）
+        run: |
+          uv run --package medicalrag-api python scripts/dev/export_openapi.py
+          pnpm --filter @medicalrag/web contract-check
+      - name: Turbo lint/typecheck/test:unit/build
+        run: pnpm turbo run lint typecheck test:unit build
+
+  security:
+    name: Security audits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks 密钥扫描
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Python 依赖漏洞审计（pip-audit over lock 导出）
+        run: |
+          uv export --frozen --no-dev --format requirements-txt -o /tmp/requirements.txt
+          # --no-hashes：pip-audit 内部用 python3.12 做 dry-run，与 lock 的 3.14 平台 wheel hash 不匹配；
+          # 它只审计版本号，hash 无意义。workspace 成员的 editable 行同样会让 dry-run 崩溃（目录无 hash）。
+          uv export --frozen --no-dev --no-hashes --format requirements-txt -o /tmp/requirements.txt
+          sed -i '/^-e \.\//d' /tmp/requirements.txt
+          uvx pip-audit -r /tmp/requirements.txt --strict
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - name: npm 生产依赖漏洞审计
+        run: pnpm install --frozen-lockfile && pnpm -r audit --prod
+
+  docker:
+    name: Docker build（四镜像）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build api/agent/worker/web images
+        run: docker compose build api agent worker web
