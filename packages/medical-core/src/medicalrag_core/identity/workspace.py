@@ -1,4 +1,4 @@
-"""工作区（Workspace）隔离域（规范定义：Workspace / Workspace Member；ADR 0003）。
+"""工作区（Workspace）隔离域（规范定义：Workspace / Workspace Member）。
 
 Workspace 为多成员共享知识库（Knowledge Base）、会话（Conversation）与运营审计记录的逻辑隔离边界；
 User 可隶属于多个 Workspace。角色决定权限边界：普通成员（member）仅可访问其所属 Workspace 的内部资源，

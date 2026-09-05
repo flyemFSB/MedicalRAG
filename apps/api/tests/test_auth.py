@@ -1,4 +1,4 @@
-"""认证路由检查（register/login/logout/me + __Host- 安全 cookie，ADR 0019）。"""
+"""认证路由检查（register/login/logout/me + __Host- 安全 cookie）。"""
 
 import time
 

@@ -34,7 +34,7 @@ class Evidence:
 
     ``intent_provenance`` 与 ``channel_provenance`` 记录融合时合并的所有等价候选的意图与通道并集。
     ``raw_score`` 为代表候选在 Qdrant/检索通道的原始得分；``score`` 为用于最终排序的单调派生得分
-    （存在重排分数时取重排分数）；ADR 0039 规定每个保留证据均须同时保留原始分与派生分以供审计。
+    （存在重排分数时取重排分数）；规定每个保留证据均须同时保留原始分与派生分以供审计。
     ``retained_reason`` 记录该项被保留的具体规则原因。
     """
 
@@ -52,7 +52,7 @@ class Evidence:
     retained_reason: str
 
     def to_payload(self) -> dict[str, object]:
-        """可引用证据的对外数据载荷（SSE 端点与 Agent Graph 共享统一出口，ADR 0080）。"""
+        """可引用证据的对外数据载荷（SSE 端点与 Agent Graph 共享统一出口）。"""
         return {
             "chunk_id": self.chunk_id,
             "source_id": self.source_id,

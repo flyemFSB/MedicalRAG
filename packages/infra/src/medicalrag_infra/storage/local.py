@@ -1,6 +1,6 @@
-"""本地文件系统对象存储适配器（v1 默认实现；ADR 0075 明确的 ObjectStorage 适配器）。
+"""本地文件系统对象存储适配器（v1 默认实现；ObjectStorage 适配器）。
 
-存储 Key 统一采用 uuid7 生成并以工作区进行目录隔离（ADR 0033 规范）：{workspace_id}/{uuid7}。
+存储 Key 统一采用 uuid7 生成并以工作区进行目录隔离：{workspace_id}/{uuid7}。
 专用于开发与测试环境；生产环境可平滑切换为 S3 兼容后端，协议端口保持不变。
 本地磁盘阻塞 I/O 操作统一经由 asyncio.to_thread 线程池隔离调度（开发规范 §1.4 异步规范）。
 """

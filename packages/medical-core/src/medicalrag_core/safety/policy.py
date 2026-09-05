@@ -1,6 +1,6 @@
-"""医疗安全边界策略定义（ADR 0042 / ADR 0043）。
+"""医疗安全边界策略定义。
 
-安全分类为检索前强制执行的确定性策略阶段，不依赖外部模型的可用性（ADR 0043）。
+安全分类为检索前强制执行的确定性策略阶段，不依赖外部模型的可用性。
 意图节点通过 ``safety_class`` 声明医疗风险等级；
 对于 PROHIBITED（个体化临床决策）请求，系统在检索前立即短路拦截，并返回固定的免责声明与就医引导语，
 坚决杜绝将一般性医学证据拼装为个体化临床诊疗方案。
@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-# ADR 0042：固定免责声明（版本化产品文案，不由模型生成，不随单次响应动态变化）。
+# 固定免责声明（版本化产品文案，不由模型生成，不随单次响应动态变化）。
 FIXED_DISCLAIMER = "AI生成内容仅供参考，不可替代医嘱，请以医生诊断为准"
 
 # 安全策略版本号：策略规则调整时递增，写入 Run 事件日志供审计追踪与评测对齐。
@@ -24,7 +24,7 @@ class RiskClass(enum.StrEnum):
     GENERAL = "general"  # 一般医学普及知识：执行正常证据检索流水线 + 基线免责声明
     TREATMENT = "treatment"  # 治疗或用药咨询：执行证据检索流水线 + 适用范围提示 + 就医引导语
     URGENT = "urgent"  # 急症与危重症状咨询：执行证据检索流水线 + 紧急就医提示 + 急救引导语
-    PROHIBITED = "prohibited"  # 个体化临床决策：检索前直接短路拦截（ADR 0043）
+    PROHIBITED = "prohibited"  # 个体化临床决策：检索前直接短路拦截
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +38,7 @@ class SafetyAssessment:
     policy_version: int
 
     def to_payload(self) -> dict[str, object]:
-        """安全评估的对外数据载荷（SSE 端点与 Agent Graph 共享统一出口，ADR 0080）。"""
+        """安全评估的对外数据载荷（SSE 端点与 Agent Graph 共享统一出口）。"""
         return {
             "risk_class": self.risk_class.value,
             "scope_notice": self.scope_notice,
@@ -46,7 +46,7 @@ class SafetyAssessment:
         }
 
 
-# 范围提示与升级用语为预设产品文案（可随设计规范微调）；免责声明除外（ADR 0042 固定文本）。
+# 范围提示与升级用语为预设产品文案（可随设计规范微调）；免责声明除外（固定文本）。
 _NOTICE: dict[RiskClass, str] = {
     RiskClass.TREATMENT: "回答仅提供一般医学知识，不构成个体化治疗方案；请以医嘱为准。",
     RiskClass.URGENT: "回答仅提供一般医学知识，不替代急诊评估；紧急情况请立即就医。",

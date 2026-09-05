@@ -1,7 +1,7 @@
 """文档摄取运行持久化仓储适配器：实现 medical_core.ingestion.ports.IngestionRunRepository 协议端口。
 
 阶段完成记录采用数据库唯一索引（UNIQUE(run_id, stage)）保障幂等性：当重试已完成的阶段时作为空操作安全返回；
-状态流转严格遵循单向前进原则，处于终止状态或阶段错位时抛出 InvalidIngestionTransition 异常（ADR 0013 / ADR 0063）。
+状态流转严格遵循单向前进原则，处于终止状态或阶段错位时抛出 InvalidIngestionTransition 异常。
 """
 
 from __future__ import annotations

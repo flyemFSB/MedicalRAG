@@ -1,4 +1,4 @@
-"""聊天编排的适配器端口：精简显式的协议契约（spec 用户故事 36、ADR 0009/0010）。
+"""聊天编排的适配器端口：精简显式的协议契约（spec 用户故事 36）。
 
 端口仅声明编排所需的输入输出契约；具体实现（PostgreSQL / Redis / Qdrant / 外部模型提供商）
 由 infra 基础设施包与应用组合根装配注入。医疗领域规则严格保留在领域层内，适配器无权决定编排流程。
@@ -24,7 +24,7 @@ from .run_state import ChatRunState
 
 
 class ProviderUnavailableError(RuntimeError):
-    """模型生成适配器整体不可用异常（经模型路由与故障转移后仍无法提供服务，ADR 0040/0041 兜底）。"""
+    """模型生成适配器整体不可用异常（经模型路由与故障转移后仍无法提供服务）。"""
 
 
 class Memory(Protocol):
@@ -63,7 +63,7 @@ class Generator(Protocol):
 
 @runtime_checkable
 class StreamingGenerator(Protocol):
-    """流式生成端口（ADR 0041：直接流式直出，不设阻塞式缓冲门）；逐段产出回答文本。
+    """流式生成端口（直接流式直出，不设阻塞式缓冲门）；逐段产出回答文本。
 
     声明为 runtime_checkable：编排层通过 isinstance 探测适配器的流式生成能力。
     实现方法为 async generator 异步生成器函数。

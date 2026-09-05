@@ -166,7 +166,7 @@ async def _require_document(repos, doc_id: str):
 
 @router.post("/documents/{doc_id}/unpublish", status_code=202)
 async def unpublish_document(doc_id: str, ctx: OperatorCtx, request: Request) -> None:
-    """下架文档（ADR 0079）：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。"""
+    """下架文档：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。"""
     _require_uuid(doc_id)
     repos = _repos(request)
     await _require_document(repos, doc_id)
@@ -183,7 +183,7 @@ async def unpublish_document(doc_id: str, ctx: OperatorCtx, request: Request) ->
 
 @router.post("/documents/{doc_id}/publish", status_code=202)
 async def republish_document(doc_id: str, ctx: OperatorCtx, request: Request) -> None:
-    """重新发布文档（ADR 0079）：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。"""
+    """重新发布文档：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。"""
     _require_uuid(doc_id)
     repos = _repos(request)
     document = await _require_document(repos, doc_id)
@@ -202,7 +202,7 @@ async def republish_document(doc_id: str, ctx: OperatorCtx, request: Request) ->
 
 @router.delete("/documents/{doc_id}", status_code=202)
 async def delete_document(doc_id: str, ctx: OperatorCtx, request: Request) -> None:
-    """级联物理删除文档（ADR 0079）：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
+    """级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
 
     仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。
     """
@@ -224,7 +224,7 @@ async def delete_document(doc_id: str, ctx: OperatorCtx, request: Request) -> No
 
 @router.post("/maintenance/orphan-scan", status_code=202)
 async def trigger_orphan_scan(ctx: OperatorCtx, request: Request) -> None:
-    """手动触发孤儿切片对账与清理任务（ADR 0079；供管理员按需触发）。"""
+    """手动触发孤儿切片对账与清理任务（供管理员按需触发）。"""
     repos = _repos(request)
     await repos.outbox.append(
         OutboxMessage(
@@ -268,7 +268,7 @@ async def list_chunks(doc_id: str, _: OperatorCtx, request: Request) -> list[Chu
 
 @router.get("/documents/{doc_id}/content")
 async def get_document_content(doc_id: str, _: OperatorCtx, request: Request):
-    """获取文档原始文件二进制流（供在线预览或下载；遵循 ADR 0068 格式化渲染规范）。"""
+    """获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。"""
     from fastapi.responses import Response
 
     from medicalrag_core.storage.ports import ObjectRef

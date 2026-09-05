@@ -1,4 +1,4 @@
-"""Qdrant 混合检索适配器（实现 medical_core.chat.ports.Retriever 协议端口；ADR 0012 / ADR 0026 / ADR 0039 迁移至 Qdrant）。
+"""Qdrant 混合检索适配器（实现 medical_core.chat.ports.Retriever 协议端口）。
 
 依托 Qdrant 原生支持的 dense + sparse 双路混合检索（Hybrid Search）与 RRF（Reciprocal Rank Fusion，k=60）倒数排名融合算法：
 通过 prefetch API 同时发起稠密向量与稀疏向量检索，由 Qdrant 引擎在服务端直接完成 RRF 融合打分。
@@ -44,7 +44,7 @@ class QdrantRetriever:
         self._sparse_model = sparse_model or SparseTextEmbedding(DEFAULT_SPARSE_MODEL)
 
     def _query_text(self, query: IntentQuery) -> str:
-        # ADR 0036：检索查询主体为模型重写后的用户问题，后附槽位中提取的医学实体（Medical Entity）；
+        # 检索查询主体为模型重写后的用户问题，后附槽位中提取的医学实体（Medical Entity）；
         # 意图节点的名称与描述仅在缺失重写问题时作为兜底，不再作为默认检索主体。
         parts: list[str] = []
         if query.rewritten_question:

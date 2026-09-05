@@ -1,4 +1,4 @@
-"""文档上传与摄取作业触发 API 路由（遵循 ADR 0013 异步摄取设计；ADR 0030 受支持格式白名单）。
+"""文档上传与摄取作业触发 API 路由（遵循异步摄取设计；受支持格式白名单）。
 
 上传流程：
 1. 文件数据保存至对象存储（v1 默认使用本地文件系统适配器）；
@@ -75,7 +75,7 @@ async def upload_document(
     await repos.ingestion.set_metadata(run_id, "workspace_id", ctx.workspace_id)
     await repos.ingestion.set_metadata(run_id, "document_id", document_id)
 
-    # ADR 0063 事务性 Outbox：与业务状态同事务写入数据库，Worker Relay 异步领取并调度执行
+    # 事务性 Outbox：与业务状态同事务写入数据库，Worker Relay 异步领取并调度执行
     await repos.outbox.append(
         OutboxMessage(
             id=str(uuid.uuid7()),

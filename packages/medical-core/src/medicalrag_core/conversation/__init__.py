@@ -2,7 +2,7 @@
 
 会话（Conversation）保障多轮问答的记忆连续性，并在不同病例之间维护独立的隔离边界；
 Thread 为 Agent 运行时执行与恢复会话的有状态运行上下文（由 Aegra 统一托管）。
-领域层在此定义业务侧 Conversation 实体，以及业务会话与底层 Thread 映射关联（ADR 0002）所需的最小契约。
+领域层在此定义业务侧 Conversation 实体，以及业务会话与底层 Thread 映射关联所需的最小契约。
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ class Conversation:
 
 @dataclass(frozen=True, slots=True)
 class ConversationRef:
-    """业务会话与 Aegra 运行时 Thread 的映射记录（ADR 0002：业务主键由 PostgreSQL 拥有）。"""
+    """业务会话与 Aegra 运行时 Thread 的映射记录（业务主键由 PostgreSQL 拥有）。"""
 
     conversation_id: str
     thread_id: str

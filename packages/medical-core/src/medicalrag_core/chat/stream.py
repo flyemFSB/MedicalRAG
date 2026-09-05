@@ -2,7 +2,7 @@
 
 事件发射顺序与 `ChatPipeline.run_stream` 的确定性执行阶段完全一致；
 浏览器端经 Aegra v2 通道（Graph State 的 values / custom channels）进行消费，本模块为领域层的事实来源。
-每个事件均内建 ``sse_name`` 与 ``to_payload`` 方法（ADR 0080）：FastAPI SSE 端点与 Agent Graph
+每个事件均内建 ``sse_name`` 与 ``to_payload`` 方法：FastAPI SSE 端点与 Agent Graph
 共享同一序列化出口，保证新增字段时前后端契约零遗漏。
 """
 
@@ -54,7 +54,7 @@ class SafetyEvent:
 
 @dataclass(frozen=True, slots=True)
 class TokenEvent:
-    """回答增量事件：单段回答文本 Token 增量（ADR 0041：直接流式直出，不设阻塞缓冲门）。"""
+    """回答增量事件：单段回答文本 Token 增量（直接流式直出，不设阻塞缓冲门）。"""
 
     sse_name: ClassVar[str] = "token"
 

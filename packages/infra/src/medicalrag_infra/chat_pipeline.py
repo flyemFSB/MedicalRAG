@@ -1,4 +1,4 @@
-"""ChatPipeline 单一装配工厂（供 API 服务与 Agent 组合根共享复用；ADR 0060 包边界规范）。
+"""ChatPipeline 单一装配工厂（供 API 服务与 Agent 组合根共享复用，遵循包边界规范）。
 
 将各运行时所需的编排依赖（LLM 配置 → 向量嵌入 Provider → Qdrant 集合初始化 → 检索器 → 存储仓储 / 会话记忆 / 意图树 → ChatPipeline）
 收敛至单一标准装配入口，杜绝多处装配导致的行为漂移。
@@ -41,7 +41,7 @@ async def build_chat_pipeline(
     """依据标准装配顺序构造 ChatPipeline 编排实例；差异化配置通过参数显式注入。
 
     - ``redis_url``：传入时自动启用查询侧向量嵌入缓存（规范 Phase 3 优化）；
-    - ``reranker``：为 True 时启用外部重排器（ADR 0037）；否则融合阶段按各通道检索原始分排序。
+    - ``reranker``：为 True 时启用外部重排器；否则融合阶段按各通道检索原始分排序。
     """
     ensure_collection(qdrant, collection, embedding_dim=embedding_dim)
     embeddings: EmbeddingProvider = OpenAICompatEmbeddingProvider(llm)

@@ -1,7 +1,7 @@
 """聊天运行持久化仓储适配器：实现 medical_core.chat.ports.RunRepository 协议端口。
 
-ChatRun 记录为聊天业务执行状态的唯一事实来源；外部观测系统的 trace_id 仅用于链路追踪关联（ADR 0082）。
-所有业务 ID 严格按照 ADR 0066 规范在信任边界校验并解析为 uuid7。
+ChatRun 记录为聊天业务执行状态的唯一事实来源；外部观测系统的 trace_id 仅用于链路追踪关联。
+所有业务 ID 严格按照 uuid7 规范在信任边界校验并解析。
 """
 
 from __future__ import annotations

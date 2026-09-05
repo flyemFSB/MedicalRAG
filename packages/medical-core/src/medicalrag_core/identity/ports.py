@@ -1,4 +1,4 @@
-"""身份认证与用户域的适配器端口协议（应用自有的身份基础设施契约，ADR 0018 / ADR 0019）。"""
+"""身份认证与用户域的适配器端口协议（应用自有的身份基础设施契约）。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ class PasswordHasher(Protocol):
 
 
 class SessionStore(Protocol):
-    """服务端会话存储端口：管理 token → user_id 的映射，支持 TTL 自动过期（ADR 0019）。"""
+    """服务端会话存储端口：管理 token → user_id 的映射，支持 TTL 自动过期。"""
 
     async def save(self, token: str, user_id: str, *, ttl_s: int) -> None: ...
     async def load(self, token: str) -> str | None: ...

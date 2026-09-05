@@ -264,7 +264,7 @@ async def test_md_pipeline_runs_to_published():
         state = await service.run(run_id, stage)
     assert state is IngestionRunState.PUBLISHED
     assert (await docs.get(document.id)).ingestion_state is IngestionRunState.PUBLISHED
-    # ADR 0079：发布翻转 PG 资格与索引点资格
+    # 发布翻转 PG 资格与索引点资格
     assert (await docs.get(document.id)).published is True
     assert service._deps.indexer.eligibility[document.id] is True
     assert await service._deps.chunks.count_for_document(document.id) >= 1
@@ -378,7 +378,7 @@ async def test_contextual_background_feeds_embedding_and_index_texts():
         state = await service.run(run_id, stage)
     assert state is IngestionRunState.PUBLISHED
 
-    # 背景按文档顺序逐块生成，且同时进入 embedding 与 indexing 的同源文本（ADR 0078）
+    # 背景按文档顺序逐块生成，且同时进入 embedding 与 indexing 的同源文本
     assert len(contextualizer.calls) >= 1
     texts = service._deps.indexer.calls[0]["embedding_texts"]
     assert texts and all(t.startswith("背景：") for t in texts)

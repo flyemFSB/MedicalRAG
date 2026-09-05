@@ -1,4 +1,4 @@
-"""API 组合依赖项：会话鉴权、工作区解析与管理员权限校验（ADR 0003 / ADR 0018 / ADR 0019）。
+"""API 组合依赖项：会话鉴权、工作区解析与管理员权限校验。
 
 - ``current_user`` —— 从 HTTP 会话 Cookie 中解析已登录用户身份（纯读操作，不触发写库）；
 - ``ensure_workspace`` —— 在用户注册或登录时确保个人工作区与成员资格初始化完成（唯一写点）；
@@ -38,7 +38,7 @@ async def ensure_workspace(
     """确保用户具备个人工作区与成员资格记录；返回 (workspace_id, role) 元组。
 
     用户角色依据 OPERATOR_EMAILS 判定：命中即授予 operator 角色（首次注册或角色提权），否则为 member 角色。
-    本方法仅在 register 与 login 认证事件中调用（ADR 0080：保障读请求路径零写库）。
+    本方法仅在 register 与 login 认证事件中调用（保障读请求路径零写库）。
     """
     memberships = await repos.memberships.memberships_of(user_id)
     desired_role = Role.OPERATOR if email in operator_emails else Role.MEMBER

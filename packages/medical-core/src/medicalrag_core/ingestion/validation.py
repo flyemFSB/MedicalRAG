@@ -1,4 +1,4 @@
-"""索引质量与发布门禁校验（validating 阶段；ADR 0013 发布门禁）。"""
+"""索引质量与发布门禁校验（validating 阶段；发布门禁）。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def validate_index(
     checksum_ok: bool,
     active_schema: bool,
 ) -> IndexValidation:
-    """对真实索引状态执行多维校验；全部检查项均通过才允许转入 published 发布态（ADR 0013 发布门禁）。"""
+    """对真实索引状态执行多维校验；全部检查项均通过才允许转入 published 发布态（发布门禁）。"""
     failures: list[str] = []
     if indexed_chunks != expected_chunks:
         failures.append(

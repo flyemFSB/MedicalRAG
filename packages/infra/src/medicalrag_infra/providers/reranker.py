@@ -1,4 +1,4 @@
-"""外部重排模型（Reranker）适配器（ADR 0037：对粗排候选集执行二次相关性重排）。
+"""外部重排模型（Reranker）适配器（对粗排候选集执行二次相关性重排）。
 
 实现 medical_core.evidence.rerank.Reranker 协议端口。
 调用兼容 OpenAI 规范的 /v1/rerank 端点（契约：POST /rerank，入参包含 model, query, documents；返回各切片相关性得分 relevance_score）。
@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import httpx2 as httpx  # 全仓自有 HTTP 通信统一采用 httpx2（ADR 0081 供应链基线）
+import httpx2 as httpx  # 全仓自有 HTTP 通信统一采用 httpx2（供应链基线）
 
 from medicalrag_core.chat.ports import ProviderUnavailableError
 from medicalrag_core.evidence.evidence import Candidate

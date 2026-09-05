@@ -1,4 +1,4 @@
-"""Qdrant 向量集合模式（Schema）定义与初始化（ADR 0026 迁移至 Qdrant）。
+"""Qdrant 向量集合模式（Schema）定义与初始化（迁移至 Qdrant）。
 
 定义集合的向量结构（包含基于 HNSW 索引的 dense_vec 稠密向量、基于 BM25 模型的 sparse_vec 稀疏向量、以及 payload 标量过滤索引），
 并提供具有幂等性的 ensure_collection 初始化构建方法。

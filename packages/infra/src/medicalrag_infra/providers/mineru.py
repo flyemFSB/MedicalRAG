@@ -1,4 +1,4 @@
-"""MinerU Cloud API 客户端适配器（ADR 0014 / ADR 0015 / ADR 0016；基于官方 v4 API 规范）。
+"""MinerU Cloud API 客户端适配器（基于官方 v4 API 规范）。
 
 封装针对复杂医学文档（PDF / 扫描件）的版面分析与结构化 Markdown 提取任务：
 - POST /api/v4/extract/task —— 提交单文件（URL 形式）提取任务，获取 task_id；
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import httpx2 as httpx  # 全仓自有 HTTP 通信统一采用 httpx2（ADR 0081 供应链基线）
+import httpx2 as httpx  # 全仓自有 HTTP 通信统一采用 httpx2（供应链基线）
 
 from medicalrag_core.chat.ports import ProviderUnavailableError
 

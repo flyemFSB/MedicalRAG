@@ -1,7 +1,7 @@
-"""PostgreSQL 业务数据模型定义（规范数据模型；ADR 0066：所有业务实体主键均采用 uuid7）。
+"""PostgreSQL 业务数据模型定义（规范数据模型；所有业务实体主键均采用 uuid7）。
 
 定义聊天运行、操作审计、会话消息、知识库文档与系统配置相关的持久化模型；
-ChatRun 为业务事实的唯一真相来源，外部观测追踪系统仅通过关联标识对接（ADR 0059 / ADR 0082），数据库内不冗余存储完整追踪调用树。
+ChatRun 为业务事实的唯一真相来源，外部观测追踪系统仅通过关联标识对接，数据库内不冗余存储完整追踪调用树。
 """
 
 from __future__ import annotations
@@ -55,14 +55,14 @@ class ChatRun(Base):
     outcome: Mapped[str | None] = mapped_column(String(32))
     assistant_message: Mapped[str | None] = mapped_column(Text)
     retrieval_policy_version: Mapped[int | None] = mapped_column(Integer)
-    # 链路追踪关联键：Aegra thread_id（映射至 Phoenix session_id，ADR 0082）
+    # 链路追踪关联键：Aegra thread_id（映射至 Phoenix session_id）
     trace_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RunEvent(Base):
-    """聊天运行状态迁移事件实体（用于合规审计：短路拦截原因、安全风险等级与生效策略版本均写入事件流，ADR 0043）。"""
+    """聊天运行状态迁移事件实体（用于合规审计：短路拦截原因、安全风险等级与生效策略版本均写入事件流）。"""
 
     __tablename__ = "run_events"
 
@@ -89,7 +89,7 @@ class Message(Base):
 
 
 class IntentNodeRow(Base):
-    """动态意图树节点配置表（以业务唯一标识码为主键，ADR 0044）。
+    """动态意图树节点配置表（以业务唯一标识码为主键）。
 
     slot_schema 模式预留后续扩展；示例问题列表以 JSON 数组形式存储。
     """
@@ -110,7 +110,7 @@ class IntentNodeRow(Base):
 
 
 class IngestionRun(Base):
-    """文档摄取运行实体（针对单个 Document 的全流程异步摄取作业，ADR 0013；PostgreSQL 为唯一事实来源）。
+    """文档摄取运行实体（针对单个 Document 的全流程异步摄取作业；PostgreSQL 为唯一事实来源）。
 
     ``data`` 字段（映射至 metadata 列）维护作业级上下文元数据（包括 object_key、title、expected_chunks、artifact_ref 等），
     随摄取各阶段的顺利完成逐步递增写入。
@@ -130,7 +130,7 @@ class IngestionRun(Base):
 
 
 class IngestionRunStage(Base):
-    """已完成摄取阶段记录表；UNIQUE(run_id, stage) 唯一约束确保阶段重试幂等执行（ADR 0063）。"""
+    """已完成摄取阶段记录表；UNIQUE(run_id, stage) 唯一约束确保阶段重试幂等执行。"""
 
     __tablename__ = "ingestion_run_stages"
     __table_args__ = (UniqueConstraint("run_id", "stage", name="uq_ingestion_run_stage"),)
@@ -144,7 +144,7 @@ class IngestionRunStage(Base):
 
 
 class WorkspaceRow(Base):
-    """工作区实体（多租户/项目成员共享资源的物理隔离边界，ADR 0003）。"""
+    """工作区实体（多租户/项目成员共享资源的物理隔离边界）。"""
 
     __tablename__ = "workspaces"
 
@@ -184,7 +184,7 @@ class KnowledgeBaseRow(Base):
 
 
 class DocumentRow(Base):
-    """文档实体（提交至知识库的原始医学资料来源；published=False 时其 Chunk 不参与检索，支持可逆下架，ADR 0079）。"""
+    """文档实体（提交至知识库的原始医学资料来源；published=False 时其 Chunk 不参与检索，支持可逆下架）。"""
 
     __tablename__ = "documents"
 
@@ -195,14 +195,14 @@ class DocumentRow(Base):
     format: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ingestion_state: Mapped[str] = mapped_column(String(32), nullable=False, default="accepted")
-    # ADR 0079 生命周期管理：published=False 时关联的所有 Chunk 均不可被检索到
+    # 生命周期管理：published=False 时关联的所有 Chunk 均不可被检索到
     published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class ChunkRow(Base):
-    """文档切片元数据与正文记录表（向量存储于 Qdrant 向量数据库中，ADR 0075）。"""
+    """文档切片元数据与正文记录表（向量存储于 Qdrant 向量数据库中）。"""
 
     __tablename__ = "chunks"
 
@@ -267,7 +267,7 @@ class ModelTargetRow(Base):
 
 
 class PlatformCredentialRow(Base):
-    """平台级模型服务商凭据记录表（由系统操作员统一管理，严禁作为普通工作区数据暴露，ADR 0010）。"""
+    """平台级模型服务商凭据记录表（由系统操作员统一管理，严禁作为普通工作区数据暴露）。"""
 
     __tablename__ = "platform_credentials"
 
@@ -280,7 +280,7 @@ class PlatformCredentialRow(Base):
 
 
 class OutboxRow(Base):
-    """事务性 Outbox 事件表（ADR 0063 / ADR 0073；建立部分索引 (created_at) WHERE processed_at IS NULL）。"""
+    """事务性 Outbox 事件表（建立部分索引 (created_at) WHERE processed_at IS NULL）。"""
 
     __tablename__ = "outbox"
 

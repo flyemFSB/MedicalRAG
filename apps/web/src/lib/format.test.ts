@@ -1,4 +1,4 @@
-// 展示格式化纯函数单元测试（ADR 0080：web 补齐 test:unit 层）。
+// 展示格式化纯函数单元测试（web 补齐 test:unit 层）。
 import { describe, expect, it } from "vitest";
 
 import { formatBytes, formatDuration, ingestionStatusLabel, relativeTime } from "./format";

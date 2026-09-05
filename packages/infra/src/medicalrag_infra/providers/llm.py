@@ -1,4 +1,4 @@
-"""OpenAI 兼容大语言模型适配器（ADR 0009 / ADR 0010；基于官方推荐 openai SDK 实现）。
+"""OpenAI 兼容大语言模型适配器（基于官方推荐 openai SDK 实现）。
 
 实现 medical_core.chat.ports.Generator、StreamingGenerator 以及 IntentClassifier 协议端口：
 通过 OpenAI SDK 调用 chat completions 及 embeddings 接口。
@@ -66,7 +66,7 @@ class _ScoredIntentOut(BaseModel):
 
 
 class _Classification(BaseModel):
-    """分类模型结构化输出契约；任一字段格式非法即判定整包无效（ADR 0044 严防臆造意图）。"""
+    """分类模型结构化输出契约；任一字段格式非法即判定整包无效（严防臆造意图）。"""
 
     model_config = ConfigDict(extra="ignore")
     rewritten_question: str | None = None
@@ -122,7 +122,7 @@ class OpenAICompatGenerator:
         return content
 
     async def stream(self, context: GenerationContext) -> AsyncIterator[str]:
-        """执行流式回答生成（ADR 0041）：通过 SDK 流式迭代器逐段产出 delta.content。"""
+        """执行流式回答生成：通过 SDK 流式迭代器逐段产出 delta.content。"""
         try:
             stream = await self._client.chat.completions.create(
                 model=self._config.model,
@@ -142,7 +142,7 @@ class OpenAICompatGenerator:
 
 
 class OpenAICompatContextualizer:
-    """基于 OpenAI SDK 的文档切片背景增强补写适配器（ADR 0078；实现 Contextualizer 协议端口）。
+    """基于 OpenAI SDK 的文档切片背景增强补写适配器（实现 Contextualizer 协议端口）。
 
     严格遵循数据安全策略，仅发送脱敏后的文档正文切片；
     若调用失败则抛出 ProviderUnavailableError，由摄取流水线自动降级为无背景模式继续执行，不阻断摄取流程。
@@ -202,7 +202,7 @@ class OpenAICompatContextualizer:
 class OpenAICompatClassifier:
     """基于 OpenAI SDK 的意图分类与问题重写适配器（实现 IntentClassifier 协议端口）。
 
-    格式异常或畸形输出绝不臆造意图（ADR 0044）：直接返回空候选集并由上层编排触发澄清；
+    格式异常或畸形输出绝不臆造意图：直接返回空候选集并由上层编排触发澄清；
     超出预设意图树的未知 ID 原样返回，由意图树白名单进行过滤剔除。
     """
 
@@ -251,7 +251,7 @@ class OpenAICompatClassifier:
         return self._parse(request, content)
 
     def _parse(self, request: ChatRequest, content: str) -> Analysis:
-        # Pydantic 结构化校验：任何字段畸形均视为整包无效，坚决避免臆造错误意图（ADR 0044）
+        # Pydantic 结构化校验：任何字段畸形均视为整包无效，坚决避免臆造错误意图
         try:
             payload = _Classification.model_validate_json(content)
         except ValueError:

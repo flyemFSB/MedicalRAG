@@ -1,4 +1,4 @@
-"""摄取运行（Ingestion Run）持久化端口（ADR 0013 / ADR 0063：PostgreSQL 作为单一事实来源；阶段推进保证幂等）。"""
+"""摄取运行（Ingestion Run）持久化端口（PostgreSQL 作为单一事实来源；阶段推进保证幂等）。"""
 
 from __future__ import annotations
 

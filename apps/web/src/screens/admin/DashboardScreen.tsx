@@ -1,4 +1,4 @@
-// 仪表盘（ADR 0067：recharts KPI 与趋势；DESIGN §5.4 工作面板而非 hero）。
+// 仪表盘（recharts KPI 与趋势；DESIGN §5.4 工作面板而非 hero）。
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { BookOpen, Cpu, LayoutDashboard, TriangleAlert, type LucideIcon } from "lucide-react";
 import {

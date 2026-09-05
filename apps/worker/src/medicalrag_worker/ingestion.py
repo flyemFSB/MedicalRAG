@@ -1,4 +1,4 @@
-"""文档摄取流水线执行服务（实现 9 阶段状态流转；ADR 0013 / ADR 0063 / ADR 0073）。
+"""文档摄取流水线执行服务（实现 9 阶段状态流转）。
 
 每个阶段对应专门的执行器方法：先执行本阶段具体的幂等工作，再调用 `complete_stage` 执行单向状态推进；
 返回推进后的阶段状态，由 TaskIQ 后台任务根据新状态自动调度下一阶段作业。
@@ -8,7 +8,7 @@
   extracting  —— 读取原始文件对象 → 解析出 Section 章节（多模态/PDF 走 MinerU 复杂版面分析，.md/.txt 走原生结构化解析）→ 持久化解析产物 artifact
   extracted   —— 阶段检查点（确认 artifact 已安全持久化存储）
   chunking    —— 读取 artifact → 执行结构感知切片 chunk_document → 写入切片记录 ChunkRecord
-  enriching   —— 可选增强：调用大模型执行切片背景说明补写（ADR 0078），生成结果写入 IngestionRun 元数据
+  enriching   —— 可选增强：调用大模型执行切片背景说明补写，生成结果写入 IngestionRun 元数据
   embedding   —— 批量调用向量嵌入 Provider（基于背景增强富文本），将 float32 稠密向量以紧凑字节流写入对象存储
   indexing    —— 读取预计算好的稠密向量及同源富文本，upsert 写入 Qdrant 集合并同步更新文档的切片总数
   validating  —— 严格校验实际索引点数、切片内容校验和 SHA256 及向量维度模式；校验未通过则抛出异常进入 FAILED 状态
@@ -94,7 +94,7 @@ class IngestionDeps:
 
 
 class ExtractionError(RuntimeError):
-    """文档解析提取或验证阶段异常；重试耗尽后作业状态将被置为 FAILED（ADR 0063 异常重放机制）。"""
+    """文档解析提取或验证阶段异常；重试耗尽后作业状态将被置为 FAILED（异常重放机制）。"""
 
 
 class IngestionService:
@@ -164,7 +164,7 @@ class IngestionService:
         MinerU 包含两种提交路径（research/retrieval-ingestion-and-storage.md §8.2）：
         若存在有效可公开访问的 source_url 则直接按 URL 提交解析；否则走官方预签名上传地址
         （申请上传链接 → PUT 上传文件字节流 → 服务端自动启动解析任务）。
-        若解析失败则抛出 ExtractionError，由工作流置入 FAILED 状态（ADR 0063 供管理后台重试）。
+        若解析失败则抛出 ExtractionError，由工作流置入 FAILED 状态（供管理后台重试）。
         """
         checksum = hashlib.sha256(raw).hexdigest()
         if fmt in {".md", ".txt"}:
@@ -232,7 +232,7 @@ class IngestionService:
         await self._deps.runs.set_metadata(run_id, "expected_chunks", len(chunks))
 
     async def _enriching(self, run_id: str) -> None:
-        """文档切片背景补写阶段（ADR 0078）：按正文顺序为各切片生成定位与上下文背景。
+        """文档切片背景补写阶段：按正文顺序为各切片生成定位与上下文背景。
 
         若未配置 Contextualizer 或单切片生成失败，则该切片保持无背景说明（优雅降级不阻断，不编造虚假背景）。
         """
@@ -262,7 +262,7 @@ class IngestionService:
     def _composed_texts(
         self, chunks: tuple[ChunkRecord, ...], meta: dict[str, object]
     ) -> list[str]:
-        """向量嵌入与索引构建共用的完整富文本：背景增强说明（ADR 0078）+ 标题路径 + 正文原文。"""
+        """向量嵌入与索引构建共用的完整富文本：背景增强说明 + 标题路径 + 正文原文。"""
         raw = cast(dict[str, object], meta.get("chunk_context") or {})
         contexts: dict[str, str] = {str(k): str(v) for k, v in raw.items()}
         texts: list[str] = []
@@ -310,7 +310,7 @@ class IngestionService:
         )
 
     async def _validating(self, run_id: str) -> None:
-        """发布门禁阶段：对真实索引状态进行全方位校验（ADR 0013）。
+        """发布门禁阶段：对真实索引状态进行全方位校验。
 
         - 切片数量校验：比对 Qdrant 索引中实际存在的向量点数（而非单纯依赖关系库记录数）；
         - 内容完整性校验：抽样回读索引点的 payload text 并重算 SHA256 校验和与数据库进行比对；
@@ -341,7 +341,7 @@ class IngestionService:
         await self._deps.documents.update_state(
             str(meta["document_id"]), IngestionRunState.PUBLISHED
         )
-        # ADR 0079 / ADR 0013：唯有在发布门禁全部验证通过后，方可激活向量索引中的检索可见资格
+        # 唯有在发布门禁全部验证通过后，方可激活向量索引中的检索可见资格
         await self._deps.documents.set_published(document_id, True)
         await self._deps.indexer.set_eligibility(document_id, True)
 

@@ -40,7 +40,7 @@ class MemoryContext:
 class ChatRequest:
     """单次聊天请求。
 
-    开启分析深度（Analysis Depth，ADR 0069）仅会提升检索预算并启用证据综合，
+    开启分析深度（Analysis Depth）仅会提升检索预算并启用证据综合，
     不会放宽安全边界，亦不改变证据回答（Evidence Answer）契约。
     """
 
@@ -57,7 +57,7 @@ class Analysis:
 
     ``guidance_message`` 为意图存疑或无法安全区分时的有界澄清引导语；
     ``system_message`` 为 SYSTEM 意图的系统预设响应文案。两者均由适配器输出，
-    对于未知或格式错误的分类输出，系统一律不臆造任何意图（ADR 0044）。
+    对于未知或格式错误的分类输出，系统一律不臆造任何意图。
     ``slots`` 为分类器针对各意图 ID 提取的原始槽位值（随后由领域层依据模式确定性解析）。
     """
 
@@ -68,7 +68,7 @@ class Analysis:
     slots: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, object]:
-        """对外导出的分析结果载荷（SSE 端点与 Agent Graph 共享该统一出口，ADR 0080）。"""
+        """对外导出的分析结果载荷（SSE 端点与 Agent Graph 共享该统一出口）。"""
         return {
             "rewritten_question": self.rewritten_question,
             "intents": [{"node_id": c.node_id, "score": c.score} for c in self.candidates],
@@ -81,7 +81,7 @@ class GenerationContext:
     """传递给生成适配器的脱敏上下文；安全评估独立传递，不拼入模型输入文本中。
 
     ``analysis`` 为真时表示这是一次深度分析（Analysis Depth）请求：适配器应选用
-    具备高阶分析能力的模型目标进行深度综合（ADR 0069），同时恪守安全边界与证据回答契约。
+    具备高阶分析能力的模型目标进行深度综合，同时恪守安全边界与证据回答契约。
     """
 
     question: str
@@ -96,7 +96,7 @@ class GenerationContext:
 class IntentQuery:
     """单次落地检索的意图及其已提取的槽位。
 
-    ``rewritten_question`` 为分类器重写后的用户问题（ADR 0036）：混合检索（Hybrid Retrieval）
+    ``rewritten_question`` 为分类器重写后的用户问题：混合检索（Hybrid Retrieval）
     的稠密与稀疏查询均以该文本为主体，并附加槽位中的医学实体（Medical Entity）；
     意图节点的名称与描述仅在重写文本缺失时作为兜底，不作为查询主体。
     """
@@ -122,8 +122,8 @@ class Outcome(enum.StrEnum):
 class ChatResult:
     """聊天编排的最终产出：包含终止类型、回答正文、证据集合、安全评估及追踪元数据。
 
-    ``safety`` 包含范围提示与升级用语，由前端界面独立渲染，严禁混入模型回答正文中
-    （ADR 0042）；``trace_id`` 关联观测后端中本 Run 的记录（Aegra thread_id，ADR 0082）。
+    ``safety`` 包含范围提示与升级用语，由前端界面独立渲染，严禁混入模型回答正文中；
+    ``trace_id`` 关联观测后端中本 Run 的记录（Aegra thread_id）。
     """
 
     outcome: Outcome

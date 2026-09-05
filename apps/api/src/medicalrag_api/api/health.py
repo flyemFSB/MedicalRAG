@@ -2,7 +2,7 @@
 
 /healthz 存活探针仅验证 API 进程处于存活状态；
 /ready 就绪探针检测核心依赖服务（PostgreSQL / Redis / Qdrant）的连通性；依赖服务异常时自动报告 degraded 降级状态（返回 HTTP 200）。
-可观测性依赖采用 fail-open 策略，不纳入就绪探针门禁（ADR 0059 / ADR 0082）。
+可观测性依赖采用 fail-open 策略，不纳入就绪探针门禁。
 """
 
 from __future__ import annotations

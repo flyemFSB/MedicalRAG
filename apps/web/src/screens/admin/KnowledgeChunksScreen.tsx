@@ -132,7 +132,7 @@ export function KnowledgeChunksScreen() {
   );
 }
 
-/* ---------- 文档预览（内联于本屏；ADR 0068 + ADR 0080：pdfjs PDF / docx-preview / 原生 md/txt/图片；xlsx/pptx 不内嵌） ---------- */
+/* ---------- 文档预览（内联于本屏；：pdfjs PDF / docx-preview / 原生 md/txt/图片；xlsx/pptx 不内嵌） ---------- */
 
 const UNSAFE_PREVIEW = ["pptx", "xlsx"];
 

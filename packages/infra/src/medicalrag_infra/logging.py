@@ -1,9 +1,9 @@
-"""安全结构化日志模块（遵循开发规范 §3 审计红线；基于 loguru 实现，ADR 0074 优先采用标准与高质量三方库）。
+"""安全结构化日志模块（遵循开发规范 §3 审计红线；基于 loguru 实现，优先采用标准与高质量三方库）。
 
 `safe_bind` 在日志字段绑定前执行严格的白名单校验：对于违禁敏感字段与未知字段直接抛出 `UnsafeLogField`，
 从根本上杜绝患者隐私、凭据以及未经脱敏的医疗正文内容泄露至日志。
 标准关联字段包括 `request_id` / `run_id` / `workspace_id` / `job_id` / `event_id` 等；
-其中 `run_id` 为业务唯一事实来源，详细观测信息统一汇聚至 Trace 后端（ADR 0082）。
+其中 `run_id` 为业务唯一事实来源，详细观测信息统一汇聚至 Trace 后端。
 """
 
 from __future__ import annotations

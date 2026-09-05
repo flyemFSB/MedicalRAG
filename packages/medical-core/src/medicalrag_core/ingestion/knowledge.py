@@ -12,14 +12,14 @@ from typing import Protocol  # DocumentRepository 用 Protocol 定义契约
 
 from .state_machine import IngestionRunState
 
-# ADR 0030：v1 允许接入的文件来源格式白名单（富媒体 Multimodal 格式由 MinerU 处理；Markdown 与纯文本走原生极简解析）。
+# v1 允许接入的文件来源格式白名单（富媒体 Multimodal 格式由 MinerU 处理；Markdown 与纯文本走原生极简解析）。
 SUPPORTED_SOURCE_FORMATS = frozenset(
     {".docx", ".pptx", ".xlsx", ".pdf", ".md", ".txt", ".png", ".jpg", ".jpeg"}
 )
 
 
 class UnsupportedSourceFormatError(ValueError):
-    """当上传的文件格式不在 ADR 0030 允许清单内时抛出该异常。"""
+    """当上传的文件格式不在允许清单内时抛出该异常。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,7 @@ class KnowledgeBase:
 
 @dataclass(frozen=True, slots=True)
 class Document:
-    """提交至知识库的原始文档实体，包含摄取生命周期状态与检索发布资格（ADR 0079）。"""
+    """提交至知识库的原始文档实体，包含摄取生命周期状态与检索发布资格。"""
 
     id: str
     knowledge_base_id: str
@@ -67,7 +67,7 @@ class DocumentRepository(Protocol):
     async def list_for_knowledge_base(self, kb_id: str) -> tuple[Document, ...]: ...
     async def update_state(self, document_id: str, state: IngestionRunState) -> None: ...
 
-    # --- 文档生命周期与发布状态管理（ADR 0079）---
+    # --- 文档生命周期与发布状态管理---
     async def set_published(self, document_id: str, published: bool) -> None: ...
     async def delete(self, document_id: str) -> None: ...
     async def list_ids(self) -> tuple[str, ...]: ...

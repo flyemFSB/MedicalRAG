@@ -1,4 +1,4 @@
-"""意图树持久化仓储适配器（以 PostgreSQL 作为配置真相来源；ADR 0044）。"""
+"""意图树持久化仓储适配器（以 PostgreSQL 作为配置真相来源）。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .models import IntentNodeRow
 
 
 class SqlIntentTreeRepository:
-    """从 PostgreSQL 数据库加载意图节点配置并组装内存 IntentTree 实例（ADR 0044：PostgreSQL 为唯一事实来源）。"""
+    """从 PostgreSQL 数据库加载意图节点配置并组装内存 IntentTree 实例（PostgreSQL 为唯一事实来源）。"""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = session_factory
@@ -35,7 +35,7 @@ class SqlIntentTreeRepository:
         return tuple(self._to_node(row) for row in rows)
 
     async def update_node(self, node: IntentNode) -> None:
-        """运营管理控制台：更新指定意图节点的可配置业务字段（配置数据变更，ADR 0044）。"""
+        """运营管理控制台：更新指定意图节点的可配置业务字段（配置数据变更）。"""
         async with self._sessions() as session:
             row = await session.get(IntentNodeRow, node.id)
             if row is None:

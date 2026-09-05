@@ -1,5 +1,5 @@
 // 前端领域类型（对齐 CONTEXT.md 正名；仅作类型，不含业务逻辑）。
-// 运营端点已全部落地：本层由 lib/api.ts 从 openapi-typescript 生成类型（ADR 0071）映射而来。
+// 运营端点已全部落地：本层由 lib/api.ts 从 openapi-typescript 生成类型映射而来。
 
 /** 摄取运行阶段状态（对应 medical-core 摄取状态机）。 */
 export type StageStatus = "pending" | "running" | "succeeded" | "failed";
@@ -196,7 +196,7 @@ export interface TrendPoint {
   value: number;
 }
 
-/** 服务健康检查（/ready 运行时形状；契约补齐响应模型后替换为生成类型）。 */
+/** 服务健康检查（ready 运行时形状；契约补齐响应模型后替换为生成类型）。 */
 export interface HealthStatus {
   status: "healthy" | "degraded";
   checks: Record<string, string>;

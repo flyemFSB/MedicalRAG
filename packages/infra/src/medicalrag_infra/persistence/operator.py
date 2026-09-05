@@ -2,7 +2,7 @@
 
 对应产品规范「运营后台」数据持久化层：包括工作区与成员资格、知识库/文档/切片、摄取作业运行、用户反馈、业务会话、
 模型目标与凭据、事务性 Outbox、操作审计、推荐样例问题、医学术语映射、以及管理看板与性能度量指标。
-所有业务实体主键均严格遵循 ADR 0066 规范采用 uuid7。
+所有业务实体主键均严格遵循 uuid7 主键规范。
 """
 
 from __future__ import annotations
@@ -300,7 +300,7 @@ class SqlDocumentRepository:
             await session.commit()
 
     async def delete(self, document_id: str) -> None:
-        """删除指定的文档实体及其关联的全部切片数据（Qdrant 向量点由 Worker 异步优先级联清理，ADR 0079）。"""
+        """删除指定的文档实体及其关联的全部切片数据（Qdrant 向量点由 Worker 异步优先级联清理）。"""
         doc_id = uuid.UUID(document_id)
         async with self._sessions() as session:
             await session.execute(delete(ChunkRow).where(ChunkRow.document_id == doc_id))
@@ -430,7 +430,7 @@ class SqlFeedbackRepository:
 
 
 class SqlConversationRepository:
-    """业务会话持久化仓储（包含业务会话与 Aegra 运行时上下文 Thread 的映射管理，ADR 0002）。"""
+    """业务会话持久化仓储（包含业务会话与 Aegra 运行时上下文 Thread 的映射管理）。"""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
@@ -594,7 +594,7 @@ class SqlOutboxRepository:
                 await session.commit()
 
     async def record_failure(self, message_id: str) -> None:
-        """记录投递失败并将重试次数 +1；超过最大重试上限的消息将在 claim 阶段自动跳过（ADR 0080 保障毒消息可追溯）。"""
+        """记录投递失败并将重试次数 +1；超过最大重试上限的消息将在 claim 阶段自动跳过（保障毒消息可追溯）。"""
         async with self._sessions() as session:
             row = await session.get(OutboxRow, uuid.UUID(message_id))
             if row is not None:
@@ -828,7 +828,7 @@ class SqlIngestionRunListing:
         self._sessions = sessions
 
     async def object_key_for_document(self, document_id: str) -> str | None:
-        """获取指定文档最新一次摄取运行的对象存储 Key（供文件预览与下载使用，ADR 0033）。"""
+        """获取指定文档最新一次摄取运行的对象存储 Key（供文件预览与下载使用）。"""
         async with self._sessions() as session:
             run = await session.scalar(
                 select(IngestionRun)

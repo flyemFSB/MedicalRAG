@@ -1,7 +1,7 @@
-"""结构感知文档分块（遵循 ADR 0034 与 ADR 0077 尺寸纪律约束）。
+"""结构感知文档分块（遵循结构优先与尺寸纪律约束）。
 
 分块边界原则：依据标题章节定义 Chunk，并携带完整的 heading_path 溯源路径。
-依据 ADR 0077 补充规则：
+依据尺寸纪律补充规则：
 单章节正文超出 Token 上限时，按句子边界切分并携带滑动重叠（Overlap）；Markdown 表格章节视为原子块，严禁拆分。
 Token 计数由调用方注入（medical-core 保持零框架/分词器依赖；生产环境由 Worker 注入真实 tiktoken 计数）。
 """
@@ -145,6 +145,6 @@ def chunk_document(
 
 
 def embedding_text(chunk: Chunk) -> str:
-    """构造用于向量嵌入的文本：章节标题路径 + 正文（ADR 0035：嵌入文本必须携带层级上下文）。"""
+    """构造用于向量嵌入的文本：章节标题路径 + 正文（嵌入文本必须携带层级上下文）。"""
     heading = " > ".join(chunk.heading_path)
     return f"{heading}\n{chunk.text}" if heading else chunk.text

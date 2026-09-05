@@ -1,4 +1,4 @@
-"""Qdrant 向量索引适配器（摄取管线 indexing 阶段：upsert 文档切片的向量与元数据；ADR 0011 / ADR 0035 迁移至 Qdrant）。
+"""Qdrant 向量索引适配器（摄取管线 indexing 阶段：upsert 文档切片的向量与元数据）。
 
 dense_vec 稠密向量由外部 Embedding Provider 计算；
 sparse_vec 稀疏向量由 fastembed 的 SparseTextEmbedding（采用静态 Qdrant/bm25 模型）预先计算并存入索引——
@@ -60,7 +60,7 @@ class QdrantIndexer:
         dense_vectors: Sequence[Sequence[float]] | None = None,
         embedding_texts: Sequence[str] | None = None,
     ) -> None:
-        # 当提供 embedding_texts 时（ADR 0078 背景补写），dense 与 sparse 统一共用同一份富文本
+        # 当提供 embedding_texts 时（背景补写），dense 与 sparse 统一共用同一份富文本
         texts = (
             list(embedding_texts)
             if embedding_texts is not None
@@ -91,7 +91,7 @@ class QdrantIndexer:
                     "text": text,
                     "snippet": chunk.text,
                     "workspace_id": workspace_id,
-                    # ADR 0079 / ADR 0013：仅在进入 published 状态后才激活资格，发布前不可被检索
+                    # 仅在进入 published 状态后才激活资格，发布前不可被检索
                     "is_eligible": False,
                 },
             )
@@ -148,7 +148,7 @@ class QdrantIndexer:
         dense = vectors.get("dense_vec") if isinstance(vectors, dict) else None
         return int(dense.size) if dense is not None else None
 
-    # --- 文档生命周期管理（ADR 0079）---
+    # --- 文档生命周期管理---
 
     def _document_filter(self, document_id: str) -> models.Filter:
         return models.Filter(

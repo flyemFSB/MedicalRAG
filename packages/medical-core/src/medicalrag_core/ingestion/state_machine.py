@@ -1,9 +1,9 @@
-"""摄取运行（Ingestion Run）九阶段状态机（单向递进；ADR 0013 异步执行，ADR 0063 / ADR 0073 分阶段异步作业）。
+"""摄取运行（Ingestion Run）九阶段状态机（单向递进，异步执行、分阶段作业）。
 
 摄取阶段顺序固定：accepted → extracting → extracted → chunking → enriching →
 embedding → indexing → validating → published。每个阶段均为独立的异步作业，具备独立的
 持久化检查点记录，支持从最后一个已持久化的阶段断点续跑；阶段重试依托 `UNIQUE(ingestion_run_id, stage)`
-保证幂等性。重试次数耗尽后 Run 转移至 FAILED 终止态（供操作员排查与手动重放，ADR 0063）。
+保证幂等性。重试次数耗尽后 Run 转移至 FAILED 终止态（供操作员排查与手动重放）。
 
 依据规范与发布门禁（发布前必须完成校验复核与索引入库），包含 validating 阶段共计 9 个阶段。
 本模块为状态机合法迁移路径的唯一权威定义。

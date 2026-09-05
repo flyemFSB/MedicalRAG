@@ -69,7 +69,7 @@ _ROUTE = tuple[
 class ChatPipeline:
     """单次聊天请求的确定性编排器。
 
-    开启分析深度（Analysis Depth，ADR 0069）仅会提高检索预算，不会放宽安全边界，
+    开启分析深度（Analysis Depth）仅会提高检索预算，不会放宽安全边界，
     亦不改变证据回答（Evidence Answer）契约。
     """
 
@@ -99,7 +99,7 @@ class ChatPipeline:
         self._threshold = threshold
 
     def _effective_policy(self, analysis_depth: bool) -> RetrievalPolicy:
-        """计算生效检索策略：开启 Analysis Depth（ADR 0069）时加倍检索预算与证据上限，策略版本保持不变。"""
+        """计算生效检索策略：开启 Analysis Depth 时加倍检索预算与证据上限，策略版本保持不变。"""
         if not analysis_depth:
             return self._policy
         return RetrievalPolicy(
@@ -319,7 +319,7 @@ class ChatPipeline:
     ) -> tuple[list[IntentQuery], str]:
         """为各落地意图提取槽位；缺失或包含非法必填槽位的意图将被跳过（遵循规范）。
 
-        每个查询均携带重写后的问题作为检索主体（ADR 0036）。
+        每个查询均携带重写后的问题作为检索主体。
         返回值格式为 (queries, clarification)：当 queries 为空时，clarification 为槽位补充引导语；否则为空字符串。
         """
         queries: list[IntentQuery] = []
