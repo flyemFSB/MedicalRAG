@@ -1,10 +1,10 @@
-"""TaskIQ 异步后台任务 Worker 组合根（遵循 version-baseline §1 门禁 3 规范：采用 TaskIQ 作为任务队列，ADR 0073）。
+"""TaskIQ 异步后台任务 Worker 组合根（遵循 version-baseline §1 门禁 3 规范：采用 TaskIQ 作为任务队列）。
 
 核心任务：
 - ``run_ingestion_stage`` —— 驱动 9 阶段文档摄取流水线（IngestionService），当前阶段完成后自动投递下一阶段任务；
-  阶段幂等性由数据库唯一约束 `UNIQUE(ingestion_run_id, stage)` 兜底保障（ADR 0063）。
+  阶段幂等性由数据库唯一约束 `UNIQUE(ingestion_run_id, stage)` 兜底保障。
 - ``relay_outbox`` —— 采用 SKIP LOCKED 避免并发竞争领取未处理的 Outbox 消息行，投递业务事件并标记已处理；
-  单条消息投递失败仅递增 attempts 计数，超过 ``outbox_max_attempts`` 阈值的毒消息将自动跳过并保持未处理状态供运维排查（ADR 0080）。
+  单条消息投递失败仅递增 attempts 计数，超过 ``outbox_max_attempts`` 阈值的毒消息将自动跳过并保持未处理状态供运维排查。
 
 任务失败重试机制：通过 Worker 重试中间件与标签进行控制；重试次数耗尽后作业状态置为 FAILED（供运营控制台查看失败原因与发起手动重放）。
 服务配置统一经由 pydantic-settings 在进程启动时进行校验，缺失关键配置立即触发 fail-fast 退出。
@@ -90,7 +90,7 @@ async def _startup(_state) -> None:
             embedding_dim=settings.qdrant_embedding_dim,
         )
     )
-    # 启动 Outbox Relay 轮询后台协程：在事务提交后领取并投递领域事件（ADR 0063）
+    # 启动 Outbox Relay 轮询后台协程：在事务提交后领取并投递领域事件
     _relay_loop_task = asyncio.create_task(_relay_loop())
 
 
@@ -131,7 +131,7 @@ async def _build_qdrant(settings: WorkerSettings):
 
 
 def _build_mineru(settings: WorkerSettings):
-    """当环境变量配置了 MEDICALRAG_MINERU_BASE_URL 时自动启用 MinerU 复杂版面解析适配器（ADR 0014 / ADR 0015）。"""
+    """当环境变量配置了 MEDICALRAG_MINERU_BASE_URL 时自动启用 MinerU 复杂版面解析适配器。"""
     from medicalrag_infra.providers.mineru import MinerUClient, MinerUConfig
 
     if not settings.mineru_base_url:
@@ -145,7 +145,7 @@ def _build_mineru(settings: WorkerSettings):
 
 
 def _build_contextualizer(settings: WorkerSettings):
-    """当环境变量配置了 MEDICALRAG_CONTEXT_MODEL 时自动启用文档切片背景增强补写（ADR 0078 特性开关）。"""
+    """当环境变量配置了 MEDICALRAG_CONTEXT_MODEL 时自动启用文档切片背景增强补写（特性开关）。"""
     from medicalrag_infra.providers.llm import LLMProviderConfig, OpenAICompatContextualizer
 
     if not settings.context_model:
@@ -173,7 +173,7 @@ async def advance_run(
 
 
 def _kick(run_id: str, stage: IngestionRunState) -> Coroutine:
-    # 派生具有幂等稳定性的任务 ID（ADR 0066：任务 ID 基于聚合根与阶段生成）；阶段幂等性由数据库约束兜底
+    # 派生具有幂等稳定性的任务 ID（任务 ID 基于聚合根与阶段生成）；阶段幂等性由数据库约束兜底
     return (
         run_ingestion_stage.kicker()
         .with_task_id(f"ingest:{run_id}:{stage.value}")
@@ -193,12 +193,12 @@ async def run_ingestion_stage(run_id: str, stage: IngestionRunState) -> None:
 async def relay_outbox() -> None:
     """Outbox Relay 任务：领取未处理的事务性事件并分发投递；成功投递后打标已处理时间戳。
 
-    事件类型与任务映射契约（ADR 0063 事务性 Outbox）：
+    事件类型与任务映射契约（事务性 Outbox）：
       - ``ingestion.stage`` → 推进摄取作业阶段（payload.stage）。
       - ``document.delete`` / ``document.scan_orphans`` → 动态分发到对应的异步任务。
 
     单条事件投递失败仅记录失败次数，不阻断整批任务的投递处理；
-    超过 outbox_max_attempts 最大重试上限后 claim 阶段将自动过滤跳过该消息（实施毒消息隔离，保持可见供排查，ADR 0080）。
+    超过 outbox_max_attempts 最大重试上限后 claim 阶段将自动过滤跳过该消息（实施毒消息隔离，保持可见供排查）。
     """
     if _repos is None:
         raise RuntimeError("Worker 尚未完成 startup 依赖装配")
@@ -216,11 +216,12 @@ async def relay_outbox() -> None:
                 await task.kiq(message.aggregate_id)
         except Exception:  # noqa: BLE001 —— 单条失败递增计数后继续处理后续消息，避免整批阻塞
             await _repos.outbox.record_failure(message.id)
+            # 位置参数格式化，不绑定 extra 字段（规避 safe_bind 白名单之外的字段名）
             logger.error(
-                "Outbox 消息投递失败（当前重试次数={attempts}，重试上限={cap}）：event={event}",
-                attempts=message.attempts + 1,
-                cap=_settings.outbox_max_attempts,
-                event=message.event_type,
+                "Outbox 消息投递失败（当前重试次数={}，重试上限={}）：event={}",
+                message.attempts + 1,
+                _settings.outbox_max_attempts,
+                message.event_type,
             )
             continue
         await _repos.outbox.mark_processed(message.id)
@@ -228,7 +229,7 @@ async def relay_outbox() -> None:
 
 @broker.task(task_name="document.unpublish")
 async def unpublish_document(document_id: str) -> None:
-    """下架文档（ADR 0079）：先切换 Qdrant 索引中的向量点可见性（检索仅过滤索引属性），再更新 PostgreSQL 中的状态标记。"""
+    """下架文档：先切换 Qdrant 索引中的向量点可见性（检索仅过滤索引属性），再更新 PostgreSQL 中的状态标记。"""
     if _indexer is None or _repos is None:
         raise RuntimeError("Worker 尚未完成 startup 依赖装配")
     await _indexer.set_eligibility(document_id, False)
@@ -237,7 +238,7 @@ async def unpublish_document(document_id: str) -> None:
 
 @broker.task(task_name="document.publish")
 async def republish_document(document_id: str) -> None:
-    """重新发布文档（ADR 0079）：恢复文档在关系库与向量索引中的检索可见资格。"""
+    """重新发布文档：恢复文档在关系库与向量索引中的检索可见资格。"""
     if _indexer is None or _repos is None:
         raise RuntimeError("Worker 尚未完成 startup 依赖装配")
     await _repos.documents.set_published(document_id, True)
@@ -246,7 +247,7 @@ async def republish_document(document_id: str) -> None:
 
 @broker.task(task_name="document.delete")
 async def delete_document_points(document_id: str) -> None:
-    """级联物理删除文档（ADR 0079）：先清理 Qdrant 索引中的向量点，确认清空后再删除 PostgreSQL 实体行（向量先行，最小化脏读窗口）。"""
+    """级联物理删除文档：先清理 Qdrant 索引中的向量点，确认清空后再删除 PostgreSQL 实体行（向量先行，最小化脏读窗口）。"""
     if _indexer is None or _repos is None:
         raise RuntimeError("Worker 尚未完成 startup 依赖装配")
     await _indexer.delete_document(document_id)
@@ -256,7 +257,7 @@ async def delete_document_points(document_id: str) -> None:
 
 @broker.task(task_name="document.scan_orphans")
 async def scan_orphan_chunks() -> int:
-    """孤儿切片对账与清理任务（ADR 0079）：对比向量索引与关系库，自动清理 document_id 已在关系库中被删除的残留向量点。"""
+    """孤儿切片对账与清理任务：对比向量索引与关系库，自动清理 document_id 已在关系库中被删除的残留向量点。"""
     if _indexer is None or _repos is None:
         raise RuntimeError("Worker 尚未完成 startup 依赖装配")
     known = set(await _repos.documents.list_ids())
