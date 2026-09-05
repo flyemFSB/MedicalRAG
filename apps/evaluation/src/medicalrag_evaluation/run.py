@@ -101,10 +101,10 @@ def eval_answer(rows: list[dict[str, object]]) -> dict[str, float] | None:
     """计算 RAGAS 答案生成质量指标（真实性 faithfulness、回答相关性 answer_relevancy）；返回 None 表示质量门禁未通过。
 
     RAGAS 为可选依赖包，但 eval-answer 属于发布候选（RC）阶段的强制门禁：
-    若缺少依赖或评测集无有效答案样本，必须显式抛出错误并以非零状态码退出，严禁静默假通过（ADR 0080）。
+    若缺少依赖或评测集无有效答案样本，必须显式抛出错误并以非零状态码退出，严禁静默假通过。
     """
     try:
-        from ragas import evaluate  # type: ignore[reportMissingImports]  # 可选依赖（eval group）
+        from ragas import evaluate  # type: ignore[reportMissingImports]  # 隔离环境注入的可选依赖
         from ragas.dataset_schema import (  # type: ignore[reportMissingImport]
             EvaluationDataset,
             SingleTurnSample,
@@ -115,7 +115,9 @@ def eval_answer(rows: list[dict[str, object]]) -> dict[str, float] | None:
         )
     except ImportError:
         print(
-            "门禁失败：eval-answer 需要安装可选依赖 `uv sync --group eval`（ragas）。",
+            "门禁失败：eval-answer 需在隔离解释器环境运行（ragas→instructor 与项目 openai>=3.3 冲突，"
+            "不入主 lock）：`uv run --no-project -p 3.14 --with ragas==0.4.3 "
+            "python apps/evaluation/src/medicalrag_evaluation/run.py eval-answer <dataset>`。",
             file=sys.stderr,
         )
         return None
@@ -188,7 +190,7 @@ def main() -> int:
     else:
         answer_metrics = eval_answer(rows)
         if answer_metrics is None:
-            return 2  # eval-answer 是 RC 门禁：缺依赖/缺样本显式失败（ADR 0080）
+            return 2  # eval-answer 是 RC 门禁：缺依赖/缺样本显式失败
         metrics = answer_metrics
     print(
         json.dumps(

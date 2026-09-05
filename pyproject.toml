@@ -25,6 +25,12 @@ dev = [
   "httpx2>=0.1",
 ]
 
+# 注意：RAGAS 不在此声明——ragas 依赖 instructor 且 instructor 锁 openai<3.0，
+# 与本仓库 openai>=3.3（httpx2 生态，ADR 0081）声明级冲突，无法同 lock 共存。
+# eval-answer（RC 门禁）以隔离解释器环境运行（ragas 自带 openai 2.x，互不干扰）：
+#   uv run --no-project -p 3.14 --with ragas==0.4.3 python apps/evaluation/src/medicalrag_evaluation/run.py eval-answer <dataset>
+# 钉版见 docs/version-baseline.md 区 3。
+
 [tool.uv.workspace]
 members = [
   "packages/*",

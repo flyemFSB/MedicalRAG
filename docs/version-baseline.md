@@ -49,6 +49,7 @@
 | loguru | 0.7.x | 结构化日志（ADR 0074；development-standards §3 红线）|
 | Phoenix (observability) | `arizephoenix/phoenix:15.1.0`（镜像 pin tag）| Postgres 后端（PG≥14，独立库 medicalrag_phoenix）；OTLP HTTP `/v1/traces`；`session.id`=aegra thread_id 深链（ADR 0082）|
 | langgraph-checkpoint-postgres | 3.1.x | AsyncPostgresSaver |
+| ragas（隔离 eval 环境） | 0.4.3 | 不与主 lock 共存（ragas→instructor→openai<3.0，与项目 openai>=3.3 冲突）；RC 门禁以 `uv run --no-project -p 3.14 --with ragas==0.4.3` 隔离运行（ADR 0080 eval-answer）|
 
 ## 4. 前端 / 工具链
 
