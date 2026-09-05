@@ -3,7 +3,7 @@
 生命周期管理负责初始化结构化安全日志、进程级数据库引擎与会话工厂、Redis 客户端、
 以及用户身份/会话管理/聊天编排相关依赖；引擎与 Redis 连接在应用停机时自动安全释放。
 聊天编排默认依据 Settings 自动装配真实的外部 Provider 适配器；单元/集成测试可传入内存伪实现覆盖。
-运营数据面接口统一通过 OperatorRepositories 读写 PostgreSQL 关系库；文档摄取触发则写入事务性 Outbox（ADR 0063）。
+运营数据面接口统一通过 OperatorRepositories 读写 PostgreSQL 关系库；文档摄取触发则写入事务性 Outbox。
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from medicalrag_infra.storage.local import LocalObjectStorage
 
 from .api.admin import router as admin_router
 from .api.auth import router as auth_router
-from .api.chat import router as chat_router
 from .api.chat_stream import router as chat_stream_router
 from .api.conversations import router as conversations_router
 from .api.feedback import router as feedback_router
@@ -115,7 +114,6 @@ def create_app(
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(auth_router)
-    app.include_router(chat_router)
     app.include_router(chat_stream_router)
     app.include_router(conversations_router)
     app.include_router(feedback_router)

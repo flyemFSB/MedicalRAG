@@ -91,52 +91,19 @@ def _register(client) -> None:
     client.post("/api/auth/register", json={"email": "a@example.com", "password": "secret123"})
 
 
-def test_chat_requires_login(tmp_path):
+def test_chat_stream_requires_login(tmp_path):
     app, _ = _app(tmp_path)
     with TestClient(app, base_url="https://testserver") as client:
         resp = client.post(
-            "/api/chat", json={"question": "q", "conversation_id": str(uuid.uuid7())}
+            "/api/chat/stream", json={"question": "q", "conversation_id": str(uuid.uuid7())}
         )
         assert resp.status_code == 401
 
 
-def test_chat_grounded_path_returns_answer(tmp_path):
-    app, _ = _app(tmp_path)
-    with TestClient(app, base_url="https://testserver") as client:
-        _register(client)
-        resp = client.post(
-            "/api/chat",
-            json={"question": "高血压应该注意什么？", "conversation_id": str(uuid.uuid7())},
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["outcome"] == "answered"
-        assert body["message"] == "高血压需低盐饮食。"
-        assert len(body["evidence"]) == 1
-        assert body["evidence"][0]["chunk_id"] == "c1"
-
-
-def test_chat_persists_run_and_messages(tmp_path):
-    app, db_file = _app(tmp_path)
-    with TestClient(app, base_url="https://testserver") as client:
-        _register(client)
-        resp = client.post(
-            "/api/chat",
-            json={"question": "高血压应该注意什么？", "conversation_id": str(uuid.uuid7())},
-        )
-        assert uuid.UUID(resp.json()["run_id"]).version == 7
-    sync_engine = create_engine(f"sqlite:///{db_file}")
-    with sync_engine.connect() as conn:
-        runs = conn.execute(text("SELECT count(*) FROM chat_runs")).scalar()
-        messages = conn.execute(text("SELECT count(*) FROM messages")).scalar()
-    assert runs == 1
-    assert messages == 2  # 用户 + 助手消息均已持久化
-
-
-def test_chat_stream_emits_typed_sse_events(tmp_path):
+def test_chat_stream_emits_typed_sse_events_and_persists(tmp_path):
     import json as _json
 
-    app, _ = _app(tmp_path)
+    app, db_file = _app(tmp_path)
     with TestClient(app, base_url="https://testserver") as client:
         _register(client)
         resp = client.post(
@@ -152,6 +119,14 @@ def test_chat_stream_emits_typed_sse_events(tmp_path):
         assert done["outcome"] == "answered"
         assert done["message"] == "高血压需低盐饮食。"
         assert len(done["evidence"]) == 1
+        assert uuid.UUID(done["run_id"]).version == 7
+    # 非流式 /api/chat 已移除（Aegra v2 为生产路径）：编排结果持久化语义改由流式端点断言
+    sync_engine = create_engine(f"sqlite:///{db_file}")
+    with sync_engine.connect() as conn:
+        runs = conn.execute(text("SELECT count(*) FROM chat_runs")).scalar()
+        messages = conn.execute(text("SELECT count(*) FROM messages")).scalar()
+    assert runs == 1
+    assert messages == 2  # 用户 + 助手消息均已持久化
 
 
 def _parse_sse(text: str) -> list[tuple[str, str]]:

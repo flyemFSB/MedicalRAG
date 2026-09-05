@@ -164,26 +164,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Chat
-         * @description 非流式同步医疗问答端点：执行完整的 8 步编排管线并返回结构化回答与溯源证据。
-         */
-        post: operations["chat_api_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/stream": {
         parameters: {
             query?: never;
@@ -721,36 +701,6 @@ export interface components {
             /** File */
             file: string;
         };
-        /** ChatRequestIn */
-        ChatRequestIn: {
-            /** Question */
-            question: string;
-            /** Conversation Id */
-            conversation_id: string;
-            /**
-             * Analysis Depth
-             * @default false
-             */
-            analysis_depth: boolean;
-        };
-        /** ChatResponse */
-        ChatResponse: {
-            /** Outcome */
-            outcome: string;
-            /** Message */
-            message: string;
-            /** Run Id */
-            run_id: string;
-            /**
-             * Evidence
-             * @default []
-             */
-            evidence: components["schemas"]["EvidenceOut"][];
-            /** Safety Notice */
-            safety_notice?: string | null;
-            /** Safety Escalation */
-            safety_escalation?: string | null;
-        };
         /** ChunkOut */
         ChunkOut: {
             /** Id */
@@ -847,21 +797,6 @@ export interface components {
             size_bytes: number;
             /** Created At */
             created_at?: string | null;
-        };
-        /** EvidenceOut */
-        EvidenceOut: {
-            /** Chunk Id */
-            chunk_id: string;
-            /** Source Id */
-            source_id: string;
-            /** Title */
-            title: string;
-            /** Snippet */
-            snippet: string;
-            /** Citation Label */
-            citation_label: string;
-            /** Score */
-            score: number;
         };
         /** FeedbackIn */
         FeedbackIn: {
@@ -1322,39 +1257,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["medicalrag_api__api__auth__UserOut"];
-                };
-            };
-        };
-    };
-    chat_api_chat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequestIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

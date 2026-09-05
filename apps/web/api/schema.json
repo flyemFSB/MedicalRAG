@@ -203,45 +203,6 @@
         }
       }
     },
-    "/api/chat": {
-      "post": {
-        "summary": "Chat",
-        "description": "非流式同步医疗问答端点：执行完整的 8 步编排管线并返回结构化回答与溯源证据。",
-        "operationId": "chat_api_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequestIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/chat/stream": {
       "post": {
         "summary": "Chat Stream",
@@ -554,7 +515,7 @@
     "/api/admin/documents/{doc_id}/unpublish": {
       "post": {
         "summary": "Unpublish Document",
-        "description": "下架文档（ADR 0079）：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。",
+        "description": "下架文档：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。",
         "operationId": "unpublish_document_api_admin_documents__doc_id__unpublish_post",
         "parameters": [
           {
@@ -592,7 +553,7 @@
     "/api/admin/documents/{doc_id}/publish": {
       "post": {
         "summary": "Republish Document",
-        "description": "重新发布文档（ADR 0079）：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。",
+        "description": "重新发布文档：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。",
         "operationId": "republish_document_api_admin_documents__doc_id__publish_post",
         "parameters": [
           {
@@ -630,7 +591,7 @@
     "/api/admin/documents/{doc_id}": {
       "delete": {
         "summary": "Delete Document",
-        "description": "级联物理删除文档（ADR 0079）：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。\n\n仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。",
+        "description": "级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。\n\n仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。",
         "operationId": "delete_document_api_admin_documents__doc_id__delete",
         "parameters": [
           {
@@ -668,7 +629,7 @@
     "/api/admin/maintenance/orphan-scan": {
       "post": {
         "summary": "Trigger Orphan Scan",
-        "description": "手动触发孤儿切片对账与清理任务（ADR 0079；供管理员按需触发）。",
+        "description": "手动触发孤儿切片对账与清理任务（供管理员按需触发）。",
         "operationId": "trigger_orphan_scan_api_admin_maintenance_orphan_scan_post",
         "responses": {
           "202": {
@@ -728,7 +689,7 @@
     "/api/admin/documents/{doc_id}/content": {
       "get": {
         "summary": "Get Document Content",
-        "description": "获取文档原始文件二进制流（供在线预览或下载；遵循 ADR 0068 格式化渲染规范）。",
+        "description": "获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。",
         "operationId": "get_document_content_api_admin_documents__doc_id__content_get",
         "parameters": [
           {
@@ -1300,84 +1261,6 @@
         ],
         "title": "Body_upload_document_api_upload_post"
       },
-      "ChatRequestIn": {
-        "properties": {
-          "question": {
-            "type": "string",
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Question"
-          },
-          "conversation_id": {
-            "type": "string",
-            "title": "Conversation Id"
-          },
-          "analysis_depth": {
-            "type": "boolean",
-            "title": "Analysis Depth",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "question",
-          "conversation_id"
-        ],
-        "title": "ChatRequestIn"
-      },
-      "ChatResponse": {
-        "properties": {
-          "outcome": {
-            "type": "string",
-            "title": "Outcome"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "evidence": {
-            "items": {
-              "$ref": "#/components/schemas/EvidenceOut"
-            },
-            "type": "array",
-            "title": "Evidence",
-            "default": []
-          },
-          "safety_notice": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Safety Notice"
-          },
-          "safety_escalation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Safety Escalation"
-          }
-        },
-        "type": "object",
-        "required": [
-          "outcome",
-          "message",
-          "run_id"
-        ],
-        "title": "ChatResponse"
-      },
       "ChunkOut": {
         "properties": {
           "id": {
@@ -1665,44 +1548,6 @@
           "size_bytes"
         ],
         "title": "DocumentOut"
-      },
-      "EvidenceOut": {
-        "properties": {
-          "chunk_id": {
-            "type": "string",
-            "title": "Chunk Id"
-          },
-          "source_id": {
-            "type": "string",
-            "title": "Source Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "snippet": {
-            "type": "string",
-            "title": "Snippet"
-          },
-          "citation_label": {
-            "type": "string",
-            "title": "Citation Label"
-          },
-          "score": {
-            "type": "number",
-            "title": "Score"
-          }
-        },
-        "type": "object",
-        "required": [
-          "chunk_id",
-          "source_id",
-          "title",
-          "snippet",
-          "citation_label",
-          "score"
-        ],
-        "title": "EvidenceOut"
       },
       "FeedbackIn": {
         "properties": {

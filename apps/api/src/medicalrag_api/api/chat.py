@@ -1,19 +1,19 @@
-"""医疗知识聊天 API 路由（POST /api/chat；提供会话鉴权 + ChatPipeline 确定性编排 + 结构化响应结果）。"""
+"""聊天路由共享依赖（chat.py / chat_stream.py 的公共装配与请求映射）。
+
+生产聊天路径为 Aegra Agent Protocol v2（/api/agent，浏览器官方 useStreamRuntime）；
+/api/chat/stream 仅保留为本地开发调试路径。非流式 POST /api/chat 已移除，契约产物随之重新导出。
+"""
 
 from __future__ import annotations
 
-from typing import Annotated, Protocol
+from typing import Protocol
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import HTTPException, Request
 
 from medicalrag_core.chat.model import ChatRequest as DomainChatRequest
 from medicalrag_core.chat.pipeline import ChatPipeline
-from medicalrag_core.evidence.evidence import Evidence
 
 from ..deps import UserCtx
-
-router = APIRouter(prefix="/api/chat")
 
 
 class _ChatRequestBody(Protocol):
@@ -34,7 +34,7 @@ async def _pipeline(request: Request) -> ChatPipeline:
 
 
 async def _acquire_chat_slot(request: Request, ctx: UserCtx) -> None:
-    """聊天限流统一拦截：非流式与流式端点共用同一令牌桶（保障 429 频控语义严格一致）。"""
+    """聊天限流统一拦截：流式端点专用令牌桶（保障 429 频控语义严格一致）。"""
     settings = request.app.state.settings
     allowed = await request.app.state.rate_limiter.acquire(
         f"chat:{ctx.user_id}",
@@ -54,54 +54,4 @@ def _domain_request(body: _ChatRequestBody, ctx: UserCtx) -> DomainChatRequest:
         user_id=ctx.user_id,
         workspace_id=ctx.workspace_id,
         analysis_depth=body.analysis_depth,
-    )
-
-
-class ChatRequestIn(BaseModel):
-    question: str = Field(min_length=1, max_length=4000)
-    conversation_id: str
-    analysis_depth: bool = False
-
-
-class EvidenceOut(BaseModel):
-    chunk_id: str
-    source_id: str
-    title: str
-    snippet: str
-    citation_label: str
-    score: float
-
-
-class ChatResponse(BaseModel):
-    outcome: str
-    message: str
-    run_id: str
-    evidence: list[EvidenceOut] = []
-    safety_notice: str | None = None
-    safety_escalation: str | None = None
-
-
-def _evidence_out(evidence: tuple[Evidence, ...]) -> list[EvidenceOut]:
-    # 证据载荷序列化单一来源：严格复用领域层 Evidence.to_payload（ADR 0080）
-    return [EvidenceOut(**e.to_payload()) for e in evidence]  # type: ignore[arg-type]
-
-
-@router.post("")
-async def chat(
-    body: ChatRequestIn,
-    request: Request,
-    ctx: UserCtx,
-    pipeline: Annotated[ChatPipeline, Depends(_pipeline)],
-) -> ChatResponse:
-    """非流式同步医疗问答端点：执行完整的 8 步编排管线并返回结构化回答与溯源证据。"""
-    await _acquire_chat_slot(request, ctx)
-    result = await pipeline.run(_domain_request(body, ctx))
-    safety = result.safety
-    return ChatResponse(
-        outcome=result.outcome.value,
-        message=result.message,
-        run_id=result.run_id,
-        evidence=_evidence_out(result.evidence),
-        safety_notice=safety.scope_notice if safety is not None else None,
-        safety_escalation=safety.escalation if safety is not None else None,
     )
