@@ -1,12 +1,14 @@
 """Aegra 运行时服务入口模块（aegra.json 配置指向本模块导出函数 `graph`）。
 
-负责在 Aegra 服务启动时执行一次性依赖装配（采用 fail-fast 快速失败策略：若数据库或 Qdrant 无法连接则立即阻断启动）。
-对外导出图构造工厂与请求认证拦截处理器（通过校验会话 Cookie 解析用户身份）。
+负责在 Aegra 服务启动时执行一次性依赖装配（采用 fail-fast 快速失败策略：
+若数据库或 Qdrant 无法连接则立即阻断启动）。
+对外导出图构造工厂与请求认证拦截处理器（通过校验会话 Cookie 解析用户身份与工作区）。
 """
 
 from __future__ import annotations
 
 import os
+from http.cookies import SimpleCookie
 
 from langgraph.graph.state import CompiledStateGraph
 from qdrant_client import QdrantClient
@@ -16,20 +18,42 @@ from medicalrag_core.chat.pipeline import ChatPipeline
 from medicalrag_core.evidence.retrieval_policy import RetrievalPolicy
 from medicalrag_infra.chat_pipeline import build_chat_pipeline
 from medicalrag_infra.persistence.db import create_engine_and_session_factory
+from medicalrag_infra.persistence.operator import SqlMembershipRepository
 from medicalrag_infra.providers.llm import LLMProviderConfig
+
+# 模块级单例缓存：Aegra 无应用生命周期关闭钩子，进程退出时自然回收；
+# 需要优雅关闭/连接池管理时再按 Aegra 生命周期事件接入。
+_session_factory = None
+_redis_client = None
+
+
+def _get_session_factory():
+    global _session_factory
+    if _session_factory is None:
+        _, _session_factory = create_engine_and_session_factory(
+            os.environ["MEDICALRAG_DATABASE_URL"]
+        )
+    return _session_factory
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        from redis.asyncio import from_url
+
+        _redis_client = from_url(os.environ.get("MEDICALRAG_REDIS_URL", "redis://localhost:6379/0"))
+    return _redis_client
 
 
 async def _build_pipeline() -> ChatPipeline:
-    database_url = os.environ["MEDICALRAG_DATABASE_URL"]
     llm = LLMProviderConfig(
         base_url=os.environ.get("MEDICALRAG_LLM_BASE_URL", "https://api.openai.com"),
         api_key=os.environ.get("MEDICALRAG_LLM_API_KEY") or None,
         model=os.environ.get("MEDICALRAG_LLM_MODEL", "gpt-4o-mini"),
     )
-    _, session_factory = create_engine_and_session_factory(database_url)
     qdrant = QdrantClient(url=os.environ.get("MEDICALRAG_QDRANT_URL", "http://localhost:6333"))
     return await build_chat_pipeline(
-        session_factory=session_factory,
+        session_factory=_get_session_factory(),
         qdrant=qdrant,
         llm=llm,
         collection=os.environ.get("MEDICALRAG_QDRANT_COLLECTION") or "medical_chunks_v1",
@@ -47,36 +71,42 @@ async def graph() -> CompiledStateGraph:
     return build_graph(await _build_pipeline())
 
 
+async def _workspace_ids(user_id: str) -> list[str]:
+    """查询用户成员的工作区（与 FastAPI 侧 UserCtx 解析同源，保障检索隔离语义一致）。"""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        memberships = await SqlMembershipRepository(_get_session_factory()).memberships_of(user_id)
+        return list(memberships.workspaces())
+    except (
+        SQLAlchemyError
+    ):  # 工作区解析失败时仅丢隔离上下文，图按不存在的工作区过滤（空召回，安全降级）
+        return []
+
+
 async def authenticate(headers: dict[str, str]) -> dict[str, object]:
     """Aegra 认证处理器（对应 aegra.json 中的 auth.path 配置）：校验客户端请求的会话 Cookie。
 
     入参 headers 为完整的 HTTP 请求头字典（包含 Cookie）；
-    经由 Redis 服务端会话仓储解析 user_id，并返回 {"identity": {"user_id": ...}} 供 Aegra 框架自动注入 langgraph_auth_user。
+    经 Redis 服务端会话仓储解析 user_id，并解析其成员工作区，
+    返回 {"identity": user_id, "workspace_ids": [...]} 供 Aegra 框架注入图执行 config。
     若用户未登录或会话已过期则返回空字典（按匿名身份处理）。
     """
-    from redis.asyncio import from_url
-
     from medicalrag_infra.auth.sessions import RedisSessionStore
 
-    redis_url = os.environ.get("MEDICALRAG_REDIS_URL", "redis://localhost:6379/0")
-    cookie_name = (
-        "MedicalRAG-SessionID"  # 本地开发环境 Cookie 名；生产环境通过 Nginx 注入 __Host- 前缀
-    )
-    raw = headers.get("Cookie", "") or headers.get("cookie", "") or ""
-    token = None
-    for part in raw.split(";"):
-        key, _, value = part.strip().partition("=")
-        if key == cookie_name:
-            token = value
+    # 安全 Cookie 命名随环境切换（生产 __Host- 前缀，本地普通名）；两者都尝试。
+    parsed = SimpleCookie()
+    parsed.load(headers.get("Cookie", "") or headers.get("cookie", "") or "")
+    morsel = None
+    for name in ("__Host-SessionID", "MedicalRAG-SessionID"):
+        candidate = parsed.get(name)
+        if candidate is not None and candidate.value:
+            morsel = candidate
             break
-    if token is None:
+    if morsel is None:
         return {}
-    redis_client = from_url(redis_url)
-    try:
-        store = RedisSessionStore(redis_client)
-        user_id = await store.load(token)
-    finally:
-        await redis_client.aclose()
+    store = RedisSessionStore(_get_redis())
+    user_id = await store.load(morsel.value)
     if user_id is None:
         return {}
-    return {"identity": {"user_id": user_id}}
+    return {"identity": user_id, "workspace_ids": await _workspace_ids(user_id)}
