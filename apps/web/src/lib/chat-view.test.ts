@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadMessage } from "@assistant-ui/react";
-import { findLastEvidence, textOf } from "./chat-view";
-
-function assistantMessage(meta?: Record<string, unknown>, text = "回答"): ThreadMessage {
-  return {
-    id: `msg-${Math.random().toString(36).slice(2)}`,
-    role: "assistant",
-    content: [{ type: "text", text }],
-    status: { type: "complete", reason: "stop" },
-    metadata: meta ? { custom: { ...meta } } : undefined,
-  } as unknown as ThreadMessage;
-}
+import { pickRecommended, textOf } from "./chat-view";
 
 function userMessage(text: string): ThreadMessage {
   return {
@@ -28,27 +18,18 @@ describe("textOf", () => {
   });
 });
 
-describe("findLastEvidence", () => {
-  it("returns empty when no assistant message has evidence", () => {
-    expect(findLastEvidence([userMessage("q"), assistantMessage(undefined)])).toEqual([]);
+describe("pickRecommended", () => {
+  it("returns empty without evidence", () => {
+    expect(pickRecommended(0, "answered")).toEqual([]);
   });
 
-  it("returns evidence of the last assistant message that carries it", () => {
-    const evidence = [{ chunk_id: "c1", source_id: "s1", title: "t", snippet: "x", citation_label: "[1]", score: 0.9 }];
-    const older = assistantMessage({ evidence });
-    const newer = assistantMessage({ outcome: "answered" });
-    expect(findLastEvidence([older, newer])).toEqual(evidence);
+  it("returns follow-ups for answered outcomes with evidence", () => {
+    expect(pickRecommended(2, "answered")).toHaveLength(2);
   });
 
-  it("ignores user messages in between", () => {
-    const evidence = [{ chunk_id: "c1", source_id: "s1", title: "t", snippet: "x", citation_label: "[1]", score: 0.9 }];
-    const withEv = assistantMessage({ evidence });
-    const user = userMessage("follow-up");
-    const plain = assistantMessage(undefined);
-    expect(findLastEvidence([withEv, user, plain])).toEqual(evidence);
-  });
-
-  it("returns empty for no messages", () => {
-    expect(findLastEvidence([])).toEqual([]);
+  it("suppresses follow-ups for guidance/empty outcomes", () => {
+    expect(pickRecommended(2, "guidance")).toEqual([]);
+    expect(pickRecommended(2, "empty")).toEqual([]);
+    expect(pickRecommended(2, undefined)).toHaveLength(2);
   });
 });

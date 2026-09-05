@@ -1,7 +1,13 @@
-// 聊天视图纯函数（从 ChatScreen 抽出：消息文本拼接 / 最新证据查找）。
+// 聊天视图纯函数（消息文本拼接 / 推荐追问计算）。
 import type { ThreadMessage } from "@assistant-ui/react";
 import type { ChatEvidenceOut } from "./api";
-import type { AssistantMeta } from "./chat-runtime";
+
+/** 助手消息元数据：图经 AIMessage.additional_kwargs["custom"] 写出，assistant-ui 官方桥透传为消息 metadata.custom。 */
+export type AssistantMeta = {
+  evidence?: ChatEvidenceOut[];
+  safety?: { risk_class?: string; scope_notice?: string | null; escalation?: string | null };
+  outcome?: string;
+} & Record<string, unknown>;
 
 export function textOf(message: ThreadMessage): string {
   return message.content
@@ -10,12 +16,7 @@ export function textOf(message: ThreadMessage): string {
     .join("");
 }
 
-export function findLastEvidence(messages: readonly ThreadMessage[]): ChatEvidenceOut[] {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message.role !== "assistant") continue;
-    const meta = (message.metadata?.custom ?? {}) as Partial<AssistantMeta>;
-    if (meta.evidence && meta.evidence.length > 0) return meta.evidence;
-  }
-  return [];
+export function pickRecommended(evidenceCount: number, outcome: string | undefined): string[] {
+  if (!evidenceCount) return [];
+  return outcome === "guidance" || outcome === "empty" ? [] : ["这些来源的结论依据是什么？", "证据中提到的数值有更新吗？"];
 }

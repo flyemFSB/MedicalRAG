@@ -15,6 +15,11 @@ export default defineConfig({
   server: {
     proxy: {
       // dev：/api + /api/agent + 健康端点 代理到后端（prod 由 Nginx 同源反代，ADR 0070）
+      "/api/agent": {
+        // 生产前端经 Aegra Agent Protocol v2（/api/agent）；dev 由 Vite 同源代理到 Aegra。
+        target: process.env.MEDICALRAG_AGENT_URL ?? "http://localhost:2026",
+        changeOrigin: true,
+      },
       "/api": {
         target: process.env.MEDICALRAG_API_URL ?? "http://localhost:8000",
         changeOrigin: true,

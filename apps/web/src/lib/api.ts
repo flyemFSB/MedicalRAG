@@ -1,4 +1,4 @@
-// 类型化 API 请求层（ADR 0071：openapi-typescript 生成类型；TanStack Query 拥有请求层）。
+// 类型化 API 请求层（openapi-typescript 生成类型；TanStack Query 拥有请求层）。
 // 后端运营端点已落地：全部经真实 fetch（同源 /api 由 dev Vite proxy / prod Nginx 反代）。
 // 响应为 snake_case（OpenAPI 契约），在此映射为前端 camelCase 领域类型（lib/types.ts）。
 import type { components } from "../api/schema";
@@ -83,8 +83,8 @@ export function fetchHealth(): Promise<HealthStatus> {
   return apiFetch<HealthStatus>("/ready");
 }
 
-// --- 聊天（/api/chat/stream SSE 由 assistant-ui ChatModelAdapter 直接消费，见 lib/chat-runtime.ts） ---
-// 注：旧版非流式 sendChat / StreamCallbacks 已被 assistant-ui 运行时替代，故下线。
+// --- 聊天（生产前端经 Aegra v2 /api/agent 官方 useStreamRuntime 消费，见 screens/ChatScreen.tsx） ---
+// 注：非流式 sendChat / StreamCallbacks 已下线；/api/chat/stream 仅作本地开发调试路径。
 
 export interface ChatEvidenceOut {
   chunk_id: string;
@@ -358,6 +358,13 @@ export interface ConversationOut {
 
 export async function fetchConversations(): Promise<ConversationOut[]> {
   return apiFetch<ConversationOut[]>("/api/conversations");
+}
+
+export function createConversation(title = "新会话"): Promise<ConversationOut> {
+  return apiFetch<ConversationOut>("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
 }
 
 // --- 反馈提交（用户侧） ---

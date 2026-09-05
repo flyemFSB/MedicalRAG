@@ -5,8 +5,8 @@ import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import type { AssistantMeta } from "../../lib/chat-runtime";
-import { textOf } from "../../lib/chat-view";
+import type { AssistantMeta } from "../../lib/chat-view";
+import { pickRecommended, textOf } from "../../lib/chat-view";
 
 export function MessageRow({
   message,
@@ -131,24 +131,30 @@ function AssistantRow({
             ) : null}
           </div>
         )}
-        {meta.recommended && meta.recommended.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {meta.recommended.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => onAsk(q)}
-                className="rounded-full border border-border bg-surface px-3 py-1 text-body-sm text-accent-ink outline-none transition-colors hover:border-accent-ink hover:bg-accent-soft focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+        {!isRunning && meta.outcome && pickRecommended(meta.evidence?.length ?? 0, meta.outcome).length > 0 ? (
+          <RecommendedRow onAsk={onAsk} items={pickRecommended(meta.evidence?.length ?? 0, meta.outcome)} />
         ) : null}
         {message.status.type === "complete" ? (
           <FeedbackRow messageId={message.id} onFeedback={onFeedback} />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function RecommendedRow({ items, onAsk }: { items: string[]; onAsk: (q: string) => void }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map((q) => (
+        <button
+          key={q}
+          type="button"
+          onClick={() => onAsk(q)}
+          className="rounded-full border border-border bg-surface px-3 py-1 text-body-sm text-accent-ink outline-none transition-colors hover:border-accent-ink hover:bg-accent-soft focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {q}
+        </button>
+      ))}
     </div>
   );
 }

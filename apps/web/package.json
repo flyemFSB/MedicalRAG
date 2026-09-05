@@ -16,6 +16,9 @@
     "dependencies":  {
                          "@antv/g6":  "^5.1.1",
                          "@assistant-ui/react":  "^0.15.16",
+                         "@assistant-ui/react-langchain":  "0.0.22",
+                         "@langchain/langgraph-sdk":  "1.9.28",
+                         "@langchain/react":  "1.0.29",
                          "@radix-ui/react-avatar":  "^1.1.2",
                          "@radix-ui/react-dialog":  "^1.1.4",
                          "@radix-ui/react-dropdown-menu":  "^2.1.4",
