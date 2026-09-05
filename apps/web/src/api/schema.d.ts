@@ -311,7 +311,7 @@ export interface paths {
         put?: never;
         /**
          * Unpublish Document
-         * @description 下架文档（ADR 0079）：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。
+         * @description 下架文档：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。
          */
         post: operations["unpublish_document_api_admin_documents__doc_id__unpublish_post"];
         delete?: never;
@@ -331,7 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Republish Document
-         * @description 重新发布文档（ADR 0079）：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。
+         * @description 重新发布文档：恢复文档的检索发布资格（仅适用于历史已完成摄取的文档）。
          */
         post: operations["republish_document_api_admin_documents__doc_id__publish_post"];
         delete?: never;
@@ -352,7 +352,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Document
-         * @description 级联物理删除文档（ADR 0079）：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
+         * @description 级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
          *
          *     仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。
          */
@@ -373,7 +373,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger Orphan Scan
-         * @description 手动触发孤儿切片对账与清理任务（ADR 0079；供管理员按需触发）。
+         * @description 手动触发孤儿切片对账与清理任务（供管理员按需触发）。
          */
         post: operations["trigger_orphan_scan_api_admin_maintenance_orphan_scan_post"];
         delete?: never;
@@ -408,7 +408,7 @@ export interface paths {
         };
         /**
          * Get Document Content
-         * @description 获取文档原始文件二进制流（供在线预览或下载；遵循 ADR 0068 格式化渲染规范）。
+         * @description 获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。
          */
         get: operations["get_document_content_api_admin_documents__doc_id__content_get"];
         put?: never;
