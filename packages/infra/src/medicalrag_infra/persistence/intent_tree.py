@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -47,7 +49,6 @@ class SqlIntentTreeRepository:
             row.parent_id = node.parent_id
             row.examples = list(node.examples)
             row.enabled = node.enabled
-            row.prompt_snippet = node.prompt_snippet
             row.prompt_template = node.prompt_template
             row.safety_class = node.safety_class.value
             await session.commit()
@@ -63,7 +64,27 @@ class SqlIntentTreeRepository:
             parent_id=row.parent_id,
             examples=tuple(row.examples or ()),
             enabled=row.enabled,
-            prompt_snippet=row.prompt_snippet,
             prompt_template=row.prompt_template,
             safety_class=RiskClass(row.safety_class),
         )
+
+
+class TtlIntentTreeLoader:
+    """带 TTL 的意图树加载器（可调用对象）：运营台改树后最多 TTL 秒在线生效，无需重启进程。
+
+    供 ChatPipeline 的 ``tree_loader`` 注入；每次 Run 开始时调用一次。
+    TTL 过期即整树重载（单条 SELECT，成本可忽略），TTL 胜过失效广播接线。
+    """
+
+    _TTL_S = 30.0
+
+    def __init__(self, repo: SqlIntentTreeRepository) -> None:
+        self._repo = repo
+        self._tree: IntentTree | None = None
+        self._loaded_at = float("-inf")
+
+    async def __call__(self) -> IntentTree:
+        if self._tree is None or time.monotonic() - self._loaded_at > self._TTL_S:
+            self._tree = await self._repo.load()
+            self._loaded_at = time.monotonic()
+        return self._tree

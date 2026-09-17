@@ -2,7 +2,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { MessageSquareText } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AdminPageHeader } from "../../components/admin-page-header";
 import { Badge } from "../../components/ui/badge";
+import { badgeSem } from "../../lib/status";
 import {
   Select,
   SelectContent,
@@ -19,9 +21,12 @@ import { relativeTime } from "../../lib/format";
 
 export function FeedbackScreen() {
   const [value, setValue] = useState<"all" | "like" | "dislike">("all");
-  const { data: items = [], isPending } = useQuery(feedbackQueryOptions());
+  const { data: items = [], isError, isPending, refetch } = useQuery(feedbackQueryOptions());
 
-  const filtered = useMemo(() => (value === "all" ? items : items.filter((i) => i.value === value)), [items, value]);
+  const filtered = useMemo(
+    () => (value === "all" ? items : items.filter((i) => i.value === value)),
+    [items, value],
+  );
 
   const columns = useMemo<ColumnDef<AppTableFeatures, FeedbackItem>[]>(
     () => [
@@ -29,32 +34,46 @@ export function FeedbackScreen() {
         accessorKey: "value",
         header: "反馈",
         cell: (info) => (
-          <Badge variant={info.getValue<string>() === "like" ? "success" : "warning"}>
+          <Badge {...badgeSem(info.getValue<string>() === "like" ? "success" : "warning")}>
             {info.getValue<string>() === "like" ? "赞" : "踩"}
           </Badge>
         ),
       },
-      { accessorKey: "comment", header: "意见", cell: (info) => info.getValue<string>() ?? <span className="text-muted-foreground">—</span> },
-      { accessorKey: "messageId", header: "消息 ID", cell: (info) => <span className="font-mono text-[0.8125rem]">{info.getValue<string>()}</span> },
-      { accessorKey: "conversationId", header: "会话 ID", cell: (info) => <span className="font-mono text-[0.8125rem]">{info.getValue<string>() ?? "—"}</span> },
-      { accessorKey: "createdAt", header: "时间", cell: (info) => relativeTime(info.getValue<string>()) },
+      {
+        accessorKey: "comment",
+        header: "意见",
+        cell: (info) => info.getValue<string>() ?? <span className="text-muted-foreground">—</span>,
+      },
+      {
+        accessorKey: "messageId",
+        header: "消息 ID",
+        cell: (info) => (
+          <span className="font-mono text-[0.8125rem]">{info.getValue<string>()}</span>
+        ),
+      },
+      {
+        accessorKey: "conversationId",
+        header: "会话 ID",
+        cell: (info) => (
+          <span className="font-mono text-[0.8125rem]">{info.getValue<string>() ?? "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: (info) => relativeTime(info.getValue<string>()),
+      },
     ],
     [],
   );
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-panel text-muted-foreground">
-            <MessageSquareText className="size-4" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-heading-lg font-semibold text-ink">反馈审核</h1>
-            <p className="mt-1 max-w-[60ch] text-body-sm text-muted-foreground">复核用户对回答的反馈，定位答案质量短板。</p>
-          </div>
-        </div>
-      </div>
+      <AdminPageHeader
+        icon={MessageSquareText}
+        title="反馈审核"
+        description="复核用户对回答的反馈，定位答案质量短板。"
+      />
       <div className="mb-3 flex items-center gap-3">
         <Select value={value} onValueChange={(v) => setValue(v as "all" | "like" | "dislike")}>
           <SelectTrigger aria-label="按反馈类型筛选" className="w-40">
@@ -74,6 +93,8 @@ export function FeedbackScreen() {
         columns={columns}
         data={filtered}
         loading={isPending}
+        error={isError}
+        onRetry={() => void refetch()}
         emptyTitle="暂无反馈"
         emptyDescription="用户对回答点赞或点踩后，反馈会显示在这里。"
       />

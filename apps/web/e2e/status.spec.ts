@@ -9,8 +9,7 @@ test("健康探针经同源反代可达", async ({ request }) => {
 });
 
 test("Prometheus /metrics 端点暴露文本格式", async ({ request }) => {
-  const resp = await request.get("/api/metrics");
+  const resp = await request.get("/metrics");
   expect(resp.ok()).toBeTruthy();
-  const body = await resp.json();
-  expect(body).toHaveProperty("counters");
+  expect(resp.headers()["content-type"]).toContain("text/plain");
 });

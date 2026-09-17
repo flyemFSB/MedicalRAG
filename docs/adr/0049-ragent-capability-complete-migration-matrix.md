@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: amended
 ---
 
 # Every Ragent capability receives a target-stack migration mapping
+
+> **Amendment (ADR 0086)**: the TaskIQ job transport layer now runs over RabbitMQ (`taskiq-aio-pika`) instead of Redis Streams. The rejection below covers *alternate orchestration engines and new event topologies* (RocketMQ-style fan-out as a replacement for the outbox + TaskIQ pipeline) and remains in force; it does not cover the broker behind the existing TaskIQ transport.
 
 MedicalRAG treats the complete Ragent migration as behavioral parity across the reference project's production paths, administration flows, optional adapters, experimental capabilities, data contracts, event protocols, and failure semantics. A Java class or dependency is not translated mechanically. Each source capability must be recorded in a migration matrix with one target status:
 

@@ -70,7 +70,6 @@ def test_resolve_whitelists_known_and_drops_unknown():
         ]
     )
     assert [s.node_id for s in result.known] == ["disease-info"]
-    assert result.unknown == ("ghost", "system-disabled")
     assert [n.id for n in result.nodes] == ["disease-info"]
 
 
@@ -99,20 +98,7 @@ def test_resolve_applies_threshold():
     assert [s.node_id for s in result.known] == ["disease-info"]
 
 
-def test_resolve_applies_top_n():
-    tree = _tree()
-    result = tree.resolve(
-        [
-            ScoredIntent("disease-info", 0.9),
-            ScoredIntent("system-greet", 0.8),
-            ScoredIntent("disease-treatment", 0.7),
-        ],
-        top_n=2,
-    )
-    assert [s.node_id for s in result.known] == ["disease-info", "system-greet"]
-
-
 def test_resolve_empty_candidates():
     tree = _tree()
     result = tree.resolve([])
-    assert result == IntentResolution((), (), ())
+    assert result == IntentResolution((), ())

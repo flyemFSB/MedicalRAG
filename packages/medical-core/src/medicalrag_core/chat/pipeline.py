@@ -11,15 +11,22 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import suppress
+from dataclasses import replace
 
 from ..evidence.fusion import fuse
 from ..evidence.rerank import Reranker
 from ..evidence.retrieval_policy import RetrievalPolicy
 from ..intent.node import IntentKind
-from ..intent.slot import extract_slots
 from ..intent.tree import IntentResolution, IntentTree
-from ..safety.policy import RiskClass, SafetyAssessment, assess, short_circuit_message
+from ..safety.policy import (
+    RiskClass,
+    SafetyAssessment,
+    assess,
+    detect_prohibited,
+    short_circuit_message,
+)
 from .model import (
     Analysis,
     ChatRequest,
@@ -37,7 +44,7 @@ from .ports import (
     ProviderUnavailableError,
     Retriever,
     RunRepository,
-    StreamingGenerator,
+    TermIntentResolver,
 )
 from .run_state import ChatRunEvent, ChatRunState, transition
 from .stream import (
@@ -60,6 +67,9 @@ _RISK_RANK = {
     RiskClass.URGENT: 2,
     RiskClass.PROHIBITED: 3,
 }
+
+# 单次检索携带的子问题数上限（问题重写 + 拆分产出；防止查询数爆炸）
+_MAX_SUB_QUESTIONS = 3
 
 _ROUTE = tuple[
     ChatRunEvent, Outcome, str, SafetyAssessment | None
@@ -84,8 +94,8 @@ class ChatPipeline:
         tree: IntentTree,
         retrieval_policy: RetrievalPolicy,
         reranker: Reranker | None = None,
-        top_n: int | None = None,
-        threshold: float | None = None,
+        term_intents: TermIntentResolver | None = None,
+        tree_loader: Callable[[], Awaitable[IntentTree]] | None = None,
     ) -> None:
         self._memory = memory
         self._classifier = classifier
@@ -95,29 +105,14 @@ class ChatPipeline:
         self._tree = tree
         self._policy = retrieval_policy
         self._reranker = reranker
-        self._top_n = top_n
-        self._threshold = threshold
+        self._term_intents = term_intents
+        self._tree_loader = tree_loader
 
     def _effective_policy(self, analysis_depth: bool) -> RetrievalPolicy:
-        """计算生效检索策略：开启 Analysis Depth 时加倍检索预算与证据上限，策略版本保持不变。"""
+        """计算生效检索策略：开启 Analysis Depth 时加倍检索预算，策略版本保持不变。"""
         if not analysis_depth:
             return self._policy
-        return RetrievalPolicy(
-            version=self._policy.version,
-            context_cap=self._policy.context_cap * 2,
-            channel_quotas=self._policy.channel_quotas,
-            intent_quota=self._policy.intent_quota,
-            intent_priority=self._policy.intent_priority,
-        )
-
-    async def run(self, request: ChatRequest, *, trace_id: str | None = None) -> ChatResult:
-        """非流式执行单次聊天请求；若客户端取消则记录 CANCELLED 状态并原样重抛。"""
-        result: ChatResult | None = None
-        async for event in self.run_stream(request, trace_id=trace_id):
-            if isinstance(event, DoneEvent):
-                result = event.result
-        assert result is not None
-        return result
+        return replace(self._policy, context_cap=self._policy.context_cap * 2)
 
     async def run_stream(
         self, request: ChatRequest, *, trace_id: str | None = None
@@ -125,16 +120,36 @@ class ChatPipeline:
         """类型化流式执行入口（按序输出阶段事件流）。
 
         事件发射顺序与确定性执行阶段完全一致；遇到取消时记录 CANCELLED 并向外重抛（规范 §1.4）。
+        DoneEvent 发出后 Run 已完成落库，任何后续异常/关闭都不得把终态改写为 FAILED/CANCELLED。
         """
         run_id = await self._runs.create_run(request)
+        completed = False
         try:
             await self._memory.append(request, Message(MessageRole.USER, request.question))
             async for event in self._execute_stream(
                 request, trace_id, run_id, ChatRunState.ACCEPTED
             ):
+                if isinstance(event, DoneEvent):
+                    completed = True
                 yield event
+        except GeneratorExit:
+            # 消费方提前关闭流（aclose）：与取消同语义，如实记录 CANCELLED 后放行
+            if not completed:
+                with suppress(Exception):
+                    await self._runs.record_state(run_id, ChatRunState.CANCELLED)
+            raise
         except asyncio.CancelledError:
-            await self._runs.record_state(run_id, ChatRunState.CANCELLED)
+            if not completed:
+                await self._runs.record_state(run_id, ChatRunState.CANCELLED)
+            raise
+        except Exception:
+            # 非 Provider 不可用的意外故障：收敛为 FAILED，避免 Run 卡在中间态。
+            # completed=True 一侧当前不可达：DoneEvent 是 _execute_stream 每条路径的最后一次产出，
+            # 其后没有代码可以抛错。守卫仍须保留（产出 DoneEvent 之后再抛错不得把已完成 Run
+            # 改写成 FAILED，同 _finish 的顺序不变量），故显式声明「无分支」而不是补一个永不失败的测试。
+            if not completed:  # pragma: no branch
+                with suppress(Exception):
+                    await self._runs.record_state(run_id, ChatRunState.FAILED)
             raise
 
     async def _execute_stream(
@@ -144,16 +159,48 @@ class ChatPipeline:
         run_id: str,
         state: ChatRunState,
     ) -> AsyncIterator[ChatStreamEvent]:
+        if self._tree_loader is not None:
+            # 意图树热更新：每次 Run 开始时经 TTL 缓存加载，运营台改树后无需重启
+            self._tree = await self._tree_loader()
         context = await self._memory.load(request)
         state = await self._step(state, ChatRunEvent.MEMORY_LOADED, run_id)
         policy = self._effective_policy(request.analysis_depth)
 
+        # 确定性违规前置拦截（ADR 0043）：不依赖外部模型，命中即短路，不检索、不生成
+        if detect_prohibited(request.question):
+            state = await self._step(state, ChatRunEvent.ROUTE_SAFETY, run_id)
+            result = await self._finish(
+                request,
+                state,
+                run_id,
+                ChatResult(
+                    outcome=Outcome.SAFETY,
+                    message=short_circuit_message(assess(RiskClass.PROHIBITED)),
+                    run_id=run_id,
+                    safety=assess(RiskClass.PROHIBITED),
+                    trace_id=trace_id,
+                ),
+            )
+            yield DoneEvent(result)
+            return
+
         analysis = await self._classifier.analyze(request, self._tree.eligible_leaves(), context)
+        if self._term_intents is not None:
+            # 查询词映射（运营配置的确定性捷径）：命中的术语意图强制纳入候选首位
+            mapped = await self._term_intents.resolve(request.question)
+            if mapped:
+                existing = {candidate.node_id for candidate in analysis.candidates}
+                analysis = replace(
+                    analysis,
+                    candidates=tuple(m for m in mapped if m.node_id not in existing)
+                    + analysis.candidates,
+                )
         state = await self._step(state, ChatRunEvent.ANALYZED, run_id)
         yield AnalysisEvent(analysis)
 
+        # 意图置信度下限（policy v2）：低分候选不进检索——宁可触发澄清引导，不拿弱意图硬检索
         resolution = self._tree.resolve(
-            analysis.candidates, top_n=self._top_n, threshold=self._threshold
+            analysis.candidates, threshold=policy.intent_min_score or None
         )
         route = self._route(analysis, resolution)
         if route is not None:
@@ -174,31 +221,40 @@ class ChatPipeline:
             yield DoneEvent(result)
             return
 
-        queries, clarification = self._build_queries(
-            resolution, analysis.slots, analysis.rewritten_question
-        )
-        if not queries:
-            state = await self._step(state, ChatRunEvent.ROUTE_GUIDANCE, run_id)
-            result = await self._finish(
-                request,
-                state,
-                run_id,
-                ChatResult(
-                    outcome=Outcome.GUIDANCE,
-                    message=clarification,
-                    run_id=run_id,
-                    trace_id=trace_id,
-                ),
-            )
-            yield DoneEvent(result)
-            return
+        queries = self._build_queries(resolution, analysis)
 
         state = await self._step(state, ChatRunEvent.ROUTE_RETRIEVAL, run_id)
         candidates = await self._retriever.retrieve(request, tuple(queries))
         if self._reranker is not None and candidates:
-            candidates = await self._reranker.rerank(analysis.rewritten_question, candidates)
-        fused = fuse(candidates, policy)
-        if not fused.evidence:
+            # 重排候选池上限（policy v2，成本天花板）：只对通道分最高的前 N 个候选支付精排费用；
+            # 重排分数按 chunk_id 回填全量候选集——被截断候选保留通道原分参与融合，不因截断丢失。
+            if (
+                policy.rerank_candidate_limit > 0
+                and len(candidates) > policy.rerank_candidate_limit
+            ):
+                capped = tuple(
+                    sorted(candidates, key=lambda c: (-c.score, c.chunk_id))[
+                        : policy.rerank_candidate_limit
+                    ]
+                )
+            else:
+                capped = candidates
+            # ADR 0037：重排器故障/配额/非法响应回落多路融合的原始通道分数，
+            # 不因调序器不可用而使已召回的证据不可答。
+            with suppress(ProviderUnavailableError):
+                reranked = await self._reranker.rerank(analysis.rewritten_question, capped)
+                rerank_scores = {c.chunk_id: c.reranker_score for c in reranked}
+                candidates = tuple(
+                    replace(c, reranker_score=rerank_scores.get(c.chunk_id)) for c in candidates
+                )
+        evidence_items = fuse(candidates, policy)
+        # 证据闸门（Evidence Gate）：整批证据的最高分未达阈值即拒答——库里没有可靠答案时不硬答
+        gate_blocked = (
+            policy.evidence_min_score > 0
+            and bool(evidence_items)
+            and max(e.score for e in evidence_items) < policy.evidence_min_score
+        )
+        if not evidence_items or gate_blocked:
             state = await self._step(state, ChatRunEvent.NO_EVIDENCE, run_id)
             result = await self._finish(
                 request,
@@ -219,35 +275,20 @@ class ChatPipeline:
         safety = assess(
             max(resolution.nodes, key=lambda n: _RISK_RANK[n.safety_class]).safety_class
         )
-        yield EvidenceEvent(fused.evidence)
+        yield EvidenceEvent(evidence_items)
         yield SafetyEvent(safety)
 
         message_parts: list[str] = []
         try:
-            if isinstance(self._generator, StreamingGenerator):
-                async for token in self._generator.stream(
-                    GenerationContext(
-                        question=request.question,
-                        rewritten_question=analysis.rewritten_question,
-                        evidence=fused.evidence,
-                        memory=context,
-                        safety=safety,
-                        analysis=request.analysis_depth,
-                    )
-                ):
-                    message_parts.append(token)
-                    yield TokenEvent(token)
-            else:
-                token = await self._generator.generate(
-                    GenerationContext(
-                        question=request.question,
-                        rewritten_question=analysis.rewritten_question,
-                        evidence=fused.evidence,
-                        memory=context,
-                        safety=safety,
-                        analysis=request.analysis_depth,
-                    )
-                )
+            gen_context = GenerationContext(
+                question=request.question,
+                rewritten_question=analysis.rewritten_question,
+                evidence=evidence_items,
+                memory=context,
+                safety=safety,
+                analysis=request.analysis_depth,
+            )
+            async for token in self._generator.stream(gen_context):
                 message_parts.append(token)
                 yield TokenEvent(token)
         except ProviderUnavailableError:
@@ -260,7 +301,7 @@ class ChatPipeline:
                     outcome=Outcome.FALLBACK,
                     message=FALLBACK_MESSAGE,
                     run_id=run_id,
-                    evidence=fused.evidence,
+                    evidence=evidence_items,
                     trace_id=trace_id,
                     retrieval_policy_version=policy.version,
                 ),
@@ -277,7 +318,7 @@ class ChatPipeline:
                 outcome=Outcome.ANSWERED,
                 message="".join(message_parts),
                 run_id=run_id,
-                evidence=fused.evidence,
+                evidence=evidence_items,
                 safety=safety,
                 trace_id=trace_id,
                 retrieval_policy_version=policy.version,
@@ -311,42 +352,22 @@ class ChatPipeline:
             )
         return None
 
-    def _build_queries(
-        self,
-        resolution: IntentResolution,
-        raw_slots: Mapping[str, Mapping[str, object]],
-        rewritten_question: str,
-    ) -> tuple[list[IntentQuery], str]:
-        """为各落地意图提取槽位；缺失或包含非法必填槽位的意图将被跳过（遵循规范）。
+    def _build_queries(self, resolution: IntentResolution, analysis: Analysis) -> list[IntentQuery]:
+        """构建落地检索查询：每个命中意图 × 每条查询文本（重写问题 + 拆分子问题）。
 
-        每个查询均携带重写后的问题作为检索主体。
-        返回值格式为 (queries, clarification)：当 queries 为空时，clarification 为槽位补充引导语；否则为空字符串。
+        每个意图的查询主体为重写后的问题；问题重写阶段拆分出的子问题作为附加查询文本
+        并发参与检索（扩展召回视角，上下限由 Analysis 产出方控制）。
         """
-        queries: list[IntentQuery] = []
-        missing_names: set[str] = set()
-        for node in resolution.nodes:
-            if node.slot_schema is None:
-                queries.append(IntentQuery(node, rewritten_question=rewritten_question))
-                continue
-            filling = extract_slots(node.slot_schema, raw_slots.get(node.id, {}))
-            required = {d.name for d in node.slot_schema.slots if d.required}
-            blocked = bool(filling.missing) or bool(required & filling.invalid.keys())
-            if blocked:
-                missing_names.update(filling.missing)
-                missing_names.update(filling.invalid)
-                continue
-            # 可选槽位的非法值不参与检索（不在 values 中）；仅在必填缺失或非法时才放弃该意图。
-            queries.append(
-                IntentQuery(
-                    node,
-                    filling.values,
-                    rewritten_question=rewritten_question,
-                )
-            )
-        if queries:
-            return queries, ""
-        names = "、".join(sorted(missing_names))
-        return [], f"请补充以下信息后继续：{names}。" if names else DEFAULT_CLARIFICATION
+        query_texts = [analysis.rewritten_question]
+        for sub in analysis.sub_questions[:_MAX_SUB_QUESTIONS]:
+            sub = sub.strip()
+            if sub and sub not in query_texts:
+                query_texts.append(sub)
+        return [
+            IntentQuery(node, rewritten_question=text)
+            for node in resolution.nodes
+            for text in query_texts
+        ]
 
     async def _step(self, state: ChatRunState, event: ChatRunEvent, run_id: str) -> ChatRunState:
         state = transition(state, event)
@@ -356,10 +377,17 @@ class ChatPipeline:
     async def _finish(
         self, request: ChatRequest, state: ChatRunState, run_id: str, result: ChatResult
     ) -> ChatResult:
-        # 短路分支目前处于中间状态（GUIDANCE/SYSTEM_ONLY/SAFETY/EMPTY/FALLBACK），
-        # 需显式收敛为 COMPLETED 终止态；落地生成分支在 MODEL_COMPLETED 时已完成收敛。
-        if state is not ChatRunState.COMPLETED:
-            state = await self._step(state, ChatRunEvent.COMPLETE, run_id)
-        await self._memory.append(request, Message(MessageRole.ASSISTANT, result.message))
+        # 先落库助手消息与运行结果（complete 本身即写入 COMPLETED 终止态），最后补记状态机
+        # COMPLETE 事件：若顺序颠倒，append/complete 在 COMPLETED 记录之后的失败会把已完成的
+        # Run 改写为 FAILED，破坏终止态权威性（运营台审计真相）。
+        assistant_id = await self._memory.append(
+            request, Message(MessageRole.ASSISTANT, result.message)
+        )
+        result = replace(result, message_id=assistant_id)
         await self._runs.complete(run_id, result)
+        if state is not ChatRunState.COMPLETED:
+            # 短路分支（GUIDANCE/SAFETY/EMPTY/FALLBACK 等）显式收敛为 COMPLETED；
+            # complete() 已落库终态，此处仅为补全状态机事件轨迹，失败不改变已完成事实
+            with suppress(Exception):
+                await self._step(state, ChatRunEvent.COMPLETE, run_id)
         return result

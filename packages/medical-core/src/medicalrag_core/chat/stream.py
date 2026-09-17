@@ -79,6 +79,7 @@ class DoneEvent:
             "outcome": result.outcome.value,
             "message": result.message,
             "run_id": result.run_id,
+            "message_id": result.message_id,
             "evidence": [e.to_payload() for e in result.evidence],
             "safety_notice": safety.scope_notice if safety is not None else None,
             "safety_escalation": safety.escalation if safety is not None else None,

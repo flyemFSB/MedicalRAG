@@ -42,6 +42,9 @@ _NEXT: dict[IngestionRunState, IngestionRunState] = {
 
 _TERMINAL = frozenset({IngestionRunState.PUBLISHED, IngestionRunState.FAILED})
 
+# 枚举定义顺序即阶段链顺序（precedes 依赖，避免每次调用重建列表）
+_STATE_ORDER = tuple(IngestionRunState)
+
 
 class InvalidIngestionTransition(ValueError):
     """当尝试对终止态（PUBLISHED 或 FAILED）执行非法状态推进时抛出该异常。"""
@@ -60,3 +63,12 @@ def advance(state: IngestionRunState) -> IngestionRunState:
 def is_terminal(state: IngestionRunState) -> bool:
     """判定给定状态是否为终止态（PUBLISHED 成功发布态或 FAILED 失败态）。"""
     return state in _TERMINAL
+
+
+def precedes(a: IngestionRunState, b: IngestionRunState) -> bool:
+    """判定阶段 a 是否位于 b 之前（枚举定义顺序即阶段链顺序）。
+
+    用于识别 at-least-once 重复投递的滞后阶段任务：此类任务应按幂等成功处理而非报错，
+    否则重复消费会被误判为阶段错位并最终把健康的 Run 置为 FAILED。
+    """
+    return _STATE_ORDER.index(a) < _STATE_ORDER.index(b)

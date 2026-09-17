@@ -6,14 +6,15 @@ build-backend = "hatchling.build"
 name = "medicalrag-agent"
 version = "0.1.0"
 description = "MedicalRAG Aegra agent runtime: LangGraph StateGraph binding the chat orchestrator"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
   "medicalrag-core",
   "medicalrag-infra",
   # Aegra 是唯一 LangGraph 开源宿主候选（ADR 0001）；钉 exact 版本，升级须过 Compose 实测门禁。
   "aegra-cli==0.10.4",
   "langgraph>=1.2",
-  "langgraph-sdk>=0.4",
+  # 认证契约：aegra.json 的 auth.path 必须指向 langgraph_sdk.Auth 实例（Aegra 只接受 Auth）。
+  "langgraph-sdk>=0.4.2",
 ]
 
 [tool.uv.sources]

@@ -25,7 +25,6 @@ def _evidence() -> Evidence:
         score=0.9,
         citation_label="[1]",
         policy_version=1,
-        retained_reason="retained",
     )
 
 
@@ -85,15 +84,67 @@ async def test_request_sends_evidence_and_auth_header():
     assert captured["auth"] == "Bearer sk-test"
 
 
-async def test_stream_yields_content_deltas_until_done():
-    sse = (
-        'data: {"choices":[{"delta":{"content":"高"}}]}\n\n'
-        'data: {"choices":[{"delta":{"content":"血压"}}]}\n\n'
-        "data: [DONE]\n\n"
-    )
+async def test_prompt_groups_evidence_by_document_and_omits_titles():
+    """ADR 0087：证据按文档分组渲染且 prompt 不含文档标题（标题只进前端证据面板）。"""
+    from dataclasses import replace
+
+    titled = replace(_evidence(), title="高血压防治指南（2024）")
+    other_doc = replace(_evidence(), chunk_id="chunk-2", document_id="doc-2", citation_label="[2]")
+    captured: dict = {}
 
     def handler(request):
-        return httpx.Response(200, text=sse)
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    await _generator(handler).generate(replace(_context(), evidence=(titled, other_doc)))
+    system = captured["body"]["messages"][0]["content"]
+    assert "文档 doc-1：" in system
+    assert "文档 doc-2：" in system
+    assert "高血压防治指南（2024）" not in system  # 标题不进 prompt
+    assert "[1] 高血压的常规管理包括低盐饮食。" in system
+
+
+async def test_history_strips_citation_markers():
+    """ADR 0087：助手历史消息进入生成上下文前剥离 [n] 角标（不留作下一轮噪声）。"""
+    from dataclasses import replace
+
+    from medicalrag_core.chat.model import MemoryContext, Message, MessageRole
+
+    memory = MemoryContext(
+        messages=(
+            Message(role=MessageRole.USER, text="高血压要注意什么？"),
+            Message(role=MessageRole.ASSISTANT, text="需要注意低盐饮食 [1]。"),
+        )
+    )
+    captured: dict = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    await _generator(handler).generate(replace(_context(), memory=memory))
+    contents = [m["content"] for m in captured["body"]["messages"][1:]]
+    assert "需要注意低盐饮食。" in contents
+    assert not any("[1]" in c for c in contents)
+
+
+def _chunk(content: str) -> str:
+    payload = {
+        "id": "cmpl-1",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "m",
+        "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+    }
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def test_stream_yields_content_deltas_until_done():
+    sse = _chunk("高") + _chunk("血压") + "data: [DONE]\n\n"
+
+    def handler(request):
+        # SDK 的 .stream() 辅助器依赖 SSE content-type 才能解析事件流
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
 
     chunks: list[str] = []
     async for chunk in _generator(handler).stream(_context()):

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import uuid
-
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from medicalrag_core.conversation import Conversation
+from medicalrag_core.ids import uuid7
+from medicalrag_core.records import Conversation
 
 from ..deps import UserCtx
 
@@ -47,7 +46,7 @@ async def create_conversation(
     """创建新的独立问答业务会话。"""
     created = await request.app.state.operator.conversations.create(
         Conversation(
-            id=str(uuid.uuid7()),
+            id=str(uuid7()),
             user_id=ctx.user_id,
             workspace_id=ctx.workspace_id,
             title=body.title,

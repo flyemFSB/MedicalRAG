@@ -8,14 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from medicalrag_core.chat.model import ChatRequest, ChatResult, Outcome
 from medicalrag_core.chat.run_state import ChatRunState
+from medicalrag_core.ids import uuid7
 from medicalrag_infra.persistence.db import create_engine_and_session_factory
 from medicalrag_infra.persistence.models import Base, ChatRun, RunEvent
 from medicalrag_infra.persistence.run_repository import SqlRunRepository
 
 
 @pytest.fixture
-async def repo() -> tuple[SqlRunRepository, async_sessionmaker[AsyncSession]]:
-    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite://")
+async def repo(
+    persistence_url: str,
+) -> tuple[SqlRunRepository, async_sessionmaker[AsyncSession]]:
+    engine, factory = create_engine_and_session_factory(persistence_url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield SqlRunRepository(factory), factory
@@ -25,9 +28,9 @@ async def repo() -> tuple[SqlRunRepository, async_sessionmaker[AsyncSession]]:
 def _request(**overrides) -> ChatRequest:
     defaults = {
         "question": "高血压应该注意什么？",
-        "conversation_id": str(uuid.uuid7()),
-        "user_id": str(uuid.uuid7()),
-        "workspace_id": str(uuid.uuid7()),
+        "conversation_id": str(uuid7()),
+        "user_id": str(uuid7()),
+        "workspace_id": str(uuid7()),
     }
     defaults.update(overrides)
     return ChatRequest(**defaults)
@@ -91,4 +94,4 @@ async def test_record_state_unknown_run_raises(
 ):
     adapter, _ = repo
     with pytest.raises(KeyError):
-        await adapter.record_state(str(uuid.uuid7()), ChatRunState.ANALYZED)
+        await adapter.record_state(str(uuid7()), ChatRunState.ANALYZED)

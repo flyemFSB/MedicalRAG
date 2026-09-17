@@ -1,40 +1,28 @@
-"""认证路由检查（register/login/logout/me + __Host- 安全 cookie）。"""
-
-import time
+"""认证路由检查（register/login/logout/me + __Host- 安全 cookie + OPERATOR_EMAILS 提权）。"""
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
 from medicalrag_api.main import create_app
 from medicalrag_api.settings import Settings
+from medicalrag_infra.auth.sessions import InMemorySessionStore
 from medicalrag_infra.persistence.models import Base
 
-
-class InMemorySessionStore:
-    def __init__(self) -> None:
-        self._sessions: dict[str, tuple[str, float]] = {}
-
-    async def save(self, token: str, user_id: str, *, ttl_s: int) -> None:
-        self._sessions[token] = (user_id, time.monotonic() + ttl_s)
-
-    async def load(self, token: str) -> str | None:
-        entry = self._sessions.get(token)
-        if entry is None:
-            return None
-        user_id, expiry = entry
-        return user_id if time.monotonic() < expiry else None
-
-    async def delete(self, token: str) -> None:
-        self._sessions.pop(token, None)
+OPERATOR_EMAIL = "ops@clinic.example"
 
 
-def _app(tmp_path):
+def _app(tmp_path, *, operator_emails: str = ""):
     db_file = tmp_path / "auth.db"
     sync_engine = create_engine(f"sqlite:///{db_file}")
     Base.metadata.create_all(sync_engine)
     sync_engine.dispose()
     return create_app(
-        Settings(database_url=f"sqlite+aiosqlite:///{db_file}"),
+        # 显式 cookie_secure：避免宿主 .env 的 MEDICALRAG_COOKIE_SECURE=false 污染 HTTPS cookie 断言
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{db_file}",
+            cookie_secure=True,
+            operator_emails=operator_emails,
+        ),
         session_store=InMemorySessionStore(),
     )
 
@@ -92,3 +80,19 @@ def test_cookie_has_secure_attributes(tmp_path):
         assert "HttpOnly" in set_cookie
         assert "SameSite=strict" in set_cookie
         assert "Secure" in set_cookie
+
+
+def test_member_promoted_to_operator_on_login(tmp_path):
+    """已是成员的用户命中 OPERATOR_EMAILS 后再登录：原地提权而非重复 INSERT（uq_workspace_member）。"""
+    with TestClient(
+        _app(tmp_path, operator_emails=OPERATOR_EMAIL), base_url="https://testserver"
+    ) as client:
+        # 先以普通注册流程建立成员资格（当时邮箱不在名单内 → member）
+        client.post("/api/auth/register", json={"email": OPERATOR_EMAIL, "password": "secret123"})
+        client.post("/api/auth/logout")
+        # 名单生效后重新登录：必须成功且拿到 operator 权限
+        resp = client.post(
+            "/api/auth/login", json={"email": OPERATOR_EMAIL, "password": "secret123"}
+        )
+        assert resp.status_code == 200
+        assert client.get("/api/admin/knowledge-bases").status_code == 200

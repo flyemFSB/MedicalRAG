@@ -2,34 +2,29 @@
 name = "medicalrag"
 version = "0.1.0"
 description = "Evidence-first medical RAG knowledge workbench (uv workspace root)"
-requires-python = ">=3.14"
-dependencies = ["medicalrag-core", "medicalrag-infra", "medicalrag-api", "medicalrag-agent", "medicalrag-worker", "medicalrag-evaluation"]
-
-[tool.uv.sources]
-medicalrag-core = { workspace = true }
-medicalrag-infra = { workspace = true }
-medicalrag-api = { workspace = true }
-medicalrag-agent = { workspace = true }
-medicalrag-worker = { workspace = true }
-medicalrag-evaluation = { workspace = true }
+requires-python = ">=3.12"
+# 根项目是 workspace 容器，不声明任何业务依赖：dev 用 `uv sync --all-packages`
+# 装全部成员，镜像构建用 `uv sync --package <app>` 只装对应应用（避免胖镜像）。
 
 [dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "pytest-cov>=7.0",
-  "ruff>=0.16",
-  "pyright>=1.1.405",
+  "ruff>=0.16.6,<0.17",
+  "pyright>=1.1.413,<2",
   "pre-commit>=4.0",
   # FastAPI TestClient 需要 httpx2（starlette 1.3 起）。
-  "httpx2>=0.1",
+  "httpx2>=2.12",
+  "aiosqlite>=0.22.1",
+  "diff-cover>=10.5.1",
 ]
 
 # 注意：RAGAS 不在此声明——ragas 依赖 instructor 且 instructor 锁 openai<3.0，
-# 与本仓库 openai>=3.3（httpx2 生态，ADR 0081）声明级冲突，无法同 lock 共存。
-# eval-answer（RC 门禁）以隔离解释器环境运行（ragas 自带 openai 2.x，互不干扰）：
-#   uv run --no-project -p 3.14 --with ragas==0.4.3 python apps/evaluation/src/medicalrag_evaluation/run.py eval-answer <dataset>
-# 钉版见 docs/version-baseline.md 区 3。
+# 与本仓库 openai>=3.11（httpx2 生态，ADR 0081）声明级冲突，无法同 lock 共存。
+# eval-answer（RC 门禁）以隔离解释器环境运行：
+#   uv run --no-project -p 3.12 --with ragas==0.4.3 python apps/evaluation/src/medicalrag_evaluation/run.py eval-answer <dataset>
+# 钉版见 docs/version-baseline.md。
 
 [tool.uv.workspace]
 members = [
@@ -42,14 +37,52 @@ members = [
 
 [tool.uv]
 # ADR 0065: Aliyun mirror for uv; lockfiles remain canonical.
-index-url = "https://mirrors.aliyun.com/pypi/simple/"
+# index-url 已废弃（uv settings 参考标注 Deprecated: use `index`），改用显式 default 索引。
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
 
+# 本仓 lock 与解析行为依赖 uv 0.12 线（Dockerfile cache mount / --no-emit-local 等）；
+# 版本不一致时立即报错而不是静默改锁。
+required-version = ">=0.12.10"
+
+# Ruff 0.16+ 默认 include 含 *.md（会动文档内 fenced Python）；规范文档一律排除。
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 100
-# ruff 0.16 默认 include 含 *.md（会格式化文档内 fenced Python 代码块）；计划文档是
-# 规范工件，禁止被 lint/format 改写，一律排除。
 extend-exclude = ["*.md"]
+# monorepo src 布局：isort 用这些目录判定 first-party
+src = [
+  "packages/medical-core/src",
+  "packages/infra/src",
+  "apps/api/src",
+  "apps/agent/src",
+  "apps/worker/src",
+  "apps/evaluation/src",
+]
+# pre-commit 会把 exclude 文件直接传给 CLI；强制遵守 exclude
+force-exclude = true
+
+[tool.ruff.lint]
+# 官方推荐显式 select（非 extend-select）：正确性优先，不打开 ALL
+select = [
+  "E",   # pycodestyle
+  "F",   # Pyflakes
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "SIM", # simplify
+  "I",   # isort
+  "ASYNC",  # flake8-async
+  "RUF",    # Ruff 自有
+]
+# E501 交由 formatter；中文注释/文案合法使用全角标点
+ignore = [
+  "E501",
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
 
 [tool.ruff.lint.isort]
 known-first-party = [
@@ -61,15 +94,23 @@ known-first-party = [
   "medicalrag_evaluation",
 ]
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# pytest 9 一键收紧：strict_config + strict_markers + strict_parametrization_ids + strict_xfail。
+# 未注册 marker / 未声明 xfail / 错配 parametrize id 直接报错，避免静默跑空、门禁假绿。
+strict = true
+addopts = "--durations=10"
 markers = [
-  # 集成测试打此标记，仅在配置 MEDICALRAG_TEST_DATABASE_URL 时运行（ADR 0080）。
   "integration: needs real middleware (compose --profile test)",
 ]
 
+# ADR 0080：basic 起步，逐步收紧 strict；只检查源码树。
 [tool.pyright]
-# ADR 0080：Python 类型门禁（basic 起步，逐步收紧 strict）。
 include = [
   "packages/medical-core/src",
   "packages/infra/src",
@@ -80,13 +121,29 @@ include = [
 ]
 exclude = ["**/__pycache__", "**/node_modules", ".venv", "apps/web/dist"]
 typeCheckingMode = "basic"
-pythonVersion = "3.14"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+# 与 lock 一致，避免 IDE/本地漂移
+defineConstant = { DEBUG = false }
 
 [tool.coverage.report]
-# ADR 0080：基线 82%（2026-08-24 全量实测），门禁设 80% 只防回退。
-fail_under = 80
+# 地板而非目标（ADR 0088）：阻断门禁是「变更行覆盖」，总量只守「不许回退」。
+# 口径 = 行 + 分支（[tool.coverage.run] branch = true 全局采集）：分母含分支目的地，
+# 与开启分支前的数字不可比。水位 = 2026-09-14 实测 75.23%（4085 statements / 881 missed；670 branches / 75 partial）。
+# 抬高它需要先补测试；改这个数字属评审对象，禁止为了绿灯下调。
+fail_under = 75
+skip_covered = true
+skip_empty = true
 
 [tool.coverage.run]
+# 分支数据全局采集：medical-core 的 100% 门禁必须看得见「分支未执行」
+# （ADR 0088 决策 7 的理由就是静默分支，行覆盖看不到它）。
+# 代价：总量分母变为「行 + 分支目的地」，总量数字与开启前不可比。
+branch = true
+# 报告路径写成仓库相对路径：否则 XML 的 <source> 是绝对路径、filename 只剩裸文件名，
+# diff-cover 无法与 git diff 的路径对齐，变更行门禁会静默地永不触发（假绿）。
+relative_files = true
 source = [
   "packages/medical-core/src/medicalrag_core",
   "packages/infra/src/medicalrag_infra",

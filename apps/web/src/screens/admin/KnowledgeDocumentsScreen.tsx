@@ -1,9 +1,18 @@
 // 文档管理（CONTEXT.md：原始来源；摄取状态徽章 + 分块入口）。
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Boxes, ChevronRight, FileImage, FileSpreadsheet, FileText, FolderOpen } from "lucide-react";
+import {
+  Boxes,
+  ChevronRight,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FolderOpen,
+} from "lucide-react";
 import { useMemo, useState } from "react";
+import { AdminPageHeader } from "../../components/admin-page-header";
 import { Badge } from "../../components/ui/badge";
+import { badgeSem } from "../../lib/status";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -18,11 +27,15 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { AppTableFeatures } from "../../lib/table";
 import type { Document } from "../../lib/types";
 import { documentsQueryOptions, knowledgeBasesQueryOptions } from "../../lib/queries";
-import { formatBytes, formatDateTime, formatLabel, ingestionStatusLabel, ingestionStatusTone } from "../../lib/format";
+import {
+  formatBytes,
+  formatDateTime,
+  formatLabel,
+  ingestionStatusLabel,
+  ingestionStatusTone,
+} from "../../lib/format";
 
-export const Route = createFileRoute("/admin/knowledge/$kbId")({
-  component: KnowledgeDocumentsScreen,
-});
+const Route = createFileRoute("/admin/knowledge/$kbId")({});
 
 export function KnowledgeDocumentsScreen() {
   const { kbId } = Route.useParams();
@@ -32,7 +45,7 @@ export function KnowledgeDocumentsScreen() {
 
   const { data: kbList = [] } = useQuery(knowledgeBasesQueryOptions());
   const kb = kbList.find((k) => k.id === kbId);
-  const { data: docs = [], isPending } = useQuery(documentsQueryOptions(kbId));
+  const { data: docs = [], isError, isPending, refetch } = useQuery(documentsQueryOptions(kbId));
 
   const filtered = useMemo(
     () =>
@@ -76,43 +89,52 @@ export function KnowledgeDocumentsScreen() {
         accessorKey: "ingestionStatus",
         header: "状态",
         cell: (info) => (
-          <Badge variant={ingestionStatusTone[info.getValue<string>()] ?? "neutral"}>
+          <Badge {...badgeSem(ingestionStatusTone[info.getValue<string>()] ?? "neutral")}>
             {ingestionStatusLabel[info.getValue<string>()] ?? info.getValue<string>()}
           </Badge>
         ),
       },
-      { accessorKey: "chunkCount", header: "分块数", cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span> },
-      { accessorKey: "createdAt", header: "创建时间", cell: (info) => <span className="whitespace-nowrap">{formatDateTime(info.getValue<string>())}</span> },
+      {
+        accessorKey: "chunkCount",
+        header: "分块数",
+        cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span>,
+      },
+      {
+        accessorKey: "createdAt",
+        header: "创建时间",
+        cell: (info) => (
+          <span className="whitespace-nowrap">{formatDateTime(info.getValue<string>())}</span>
+        ),
+      },
     ],
     [kbId],
   );
 
   return (
     <div>
-      <nav aria-label="面包屑" className="mb-3 flex items-center gap-1.5 text-caption text-muted-foreground">
-        <Link to="/admin/knowledge" className="rounded-sm font-medium text-accent-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+      <nav
+        aria-label="面包屑"
+        className="mb-3 flex items-center gap-1.5 text-caption text-muted-foreground"
+      >
+        <Link
+          to="/admin/knowledge"
+          className="rounded-sm font-medium text-accent-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
           知识库管理
         </Link>
         <ChevronRight className="size-3.5" aria-hidden />
         <span className="min-w-0 truncate">{kb ? kb.name : "文档管理"}</span>
       </nav>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-panel text-muted-foreground">
-            <FolderOpen className="size-4" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-heading-lg font-semibold text-ink">文档管理</h1>
-            <p className="mt-1 max-w-[60ch] text-body-sm text-muted-foreground">
-              {kb ? `${kb.name}（${kb.id}）` : "知识库文档"}
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="secondary" onClick={() => navigate({ to: "/admin/knowledge" })}>返回知识库</Button>
-          <Button disabled title="该操作待后端接入后可用">上传文档</Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        icon={FolderOpen}
+        title="文档管理"
+        description={kb ? `${kb.name}（${kb.id}）` : "知识库文档"}
+        actions={
+          <Button variant="secondary" onClick={() => navigate({ to: "/admin/knowledge" })}>
+            返回知识库
+          </Button>
+        }
+      />
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <Input
           aria-label="搜索文档名称"
@@ -121,7 +143,7 @@ export function KnowledgeDocumentsScreen() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status} onValueChange={(v) => setStatus(v ?? "")}>
           <SelectTrigger aria-label="按摄取状态筛选" className="w-40">
             <SelectValue placeholder="全部状态" />
           </SelectTrigger>
@@ -141,14 +163,21 @@ export function KnowledgeDocumentsScreen() {
         columns={columns}
         data={filtered}
         loading={isPending}
+        error={isError}
+        onRetry={() => void refetch()}
         emptyTitle="暂无文档"
         emptyDescription="上传功能接入后，可导入第一份受支持格式的医疗来源。"
         renderRowActions={(doc) => (
-          <Button variant="ghost" size="icon" aria-label="查看分块" asChild>
-            <Link to="/admin/knowledge/$kbId/docs/$docId" params={{ kbId, docId: doc.id }}>
-              <Boxes />
-            </Link>
-          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="查看分块"
+            render={
+              <Link to="/admin/knowledge/$kbId/docs/$docId" params={{ kbId, docId: doc.id }}>
+                <Boxes />
+              </Link>
+            }
+          />
         )}
       />
     </div>

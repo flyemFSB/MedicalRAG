@@ -2,10 +2,9 @@
 // ensureQueryData，不手写 fetch 缓存）。queryOptions 供 loader 与组件复用同一 queryKey。
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import {
-  createKnowledgeBase,
-  fetchAuditEvents,
+  ApiError,
   fetchChunks,
-  fetchCredentials,
+  fetchConversations,
   fetchDashboard,
   fetchDocuments,
   fetchFeedback,
@@ -16,13 +15,12 @@ import {
   fetchMappings,
   fetchMe,
   fetchModelTargets,
+  fetchRun,
   fetchRuns,
   fetchSampleQuestions,
   fetchUsers,
   fetchWorkspaces,
-  retryIngestionRun,
-  updateIntentNode,
-  createMapping,
+  type UserOut,
 } from "./api";
 
 export const authKeys = {
@@ -33,9 +31,26 @@ export const authKeys = {
 export function meQueryOptions() {
   return queryOptions({
     queryKey: authKeys.me,
-    queryFn: fetchMe,
-    // 未登录时 /api/auth/me 返回 401，属正常状态而非请求失败。
+    // 未登录（401）是正常状态，归一为 null；网络/5xx 必须上抛，
+    // 否则鉴权守卫会把服务故障当成“未登录”并静默踢到登录页。
+    queryFn: async (): Promise<UserOut | null> => {
+      try {
+        return await fetchMe();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return null;
+        throw error;
+      }
+    },
     retry: false,
+  });
+}
+
+/** 会话列表（聊天侧栏与线程适配器共用，避免内联 queryKey 造成缓存碎片）。 */
+export function conversationsQueryOptions() {
+  return queryOptions({
+    queryKey: ["conversations"] as const,
+    queryFn: fetchConversations,
+    staleTime: 30_000,
   });
 }
 
@@ -60,7 +75,6 @@ export function dashboardQueryOptions() {
 }
 
 export const adminKeys = {
-  all: ["admin"] as const,
   knowledgeBases: ["admin", "knowledge-bases"] as const,
   documents: (kbId: string) => ["admin", "documents", kbId] as const,
   chunks: (docId: string) => ["admin", "chunks", docId] as const,
@@ -68,13 +82,10 @@ export const adminKeys = {
   intentTree: ["admin", "intent-tree"] as const,
   mappings: ["admin", "mappings"] as const,
   models: ["admin", "models"] as const,
-  credentials: ["admin", "credentials"] as const,
   runs: ["admin", "runs"] as const,
   run: (id: string) => ["admin", "runs", id] as const,
   users: ["admin", "users"] as const,
   workspaces: ["admin", "workspaces"] as const,
-  audit: ["admin", "audit"] as const,
-  sampleQuestions: ["admin", "sample-questions"] as const,
   feedback: ["admin", "feedback"] as const,
 };
 
@@ -106,19 +117,12 @@ export function modelTargetsQueryOptions() {
   return queryOptions({ queryKey: adminKeys.models, queryFn: fetchModelTargets });
 }
 
-export function credentialsQueryOptions() {
-  return queryOptions({ queryKey: adminKeys.credentials, queryFn: fetchCredentials });
-}
-
 export function runsQueryOptions() {
   return queryOptions({ queryKey: adminKeys.runs, queryFn: fetchRuns });
 }
 
 export function runQueryOptions(id: string) {
-  return queryOptions({
-    queryKey: adminKeys.run(id),
-    queryFn: () => fetchRuns().then((r) => r.find((x) => x.id === id) ?? null),
-  });
+  return queryOptions({ queryKey: adminKeys.run(id), queryFn: () => fetchRun(id) });
 }
 
 export function usersQueryOptions() {
@@ -129,21 +133,11 @@ export function workspacesQueryOptions() {
   return queryOptions({ queryKey: adminKeys.workspaces, queryFn: fetchWorkspaces });
 }
 
-export function auditQueryOptions() {
-  return queryOptions({ queryKey: adminKeys.audit, queryFn: fetchAuditEvents });
-}
-
 export function sampleQuestionsQueryOptions() {
-  return queryOptions({ queryKey: adminKeys.sampleQuestions, queryFn: fetchSampleQuestions });
+  // 欢迎屏样例问题：用户侧 /api/sample-questions（无管理端写路径，migration seed）
+  return queryOptions({ queryKey: ["sample-questions"], queryFn: fetchSampleQuestions });
 }
 
 export function feedbackQueryOptions() {
   return queryOptions({ queryKey: adminKeys.feedback, queryFn: fetchFeedback });
 }
-
-export const adminMutations = {
-  createKnowledgeBase,
-  retryIngestionRun,
-  updateIntentNode,
-  createMapping,
-};

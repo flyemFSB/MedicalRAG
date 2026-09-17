@@ -6,11 +6,11 @@
 """
 
 import os
-import uuid
 
 import pytest
 
 from medicalrag_core.identity.user import User
+from medicalrag_core.ids import uuid7
 from medicalrag_infra.persistence.db import create_engine_and_session_factory
 from medicalrag_infra.persistence.models import Base
 from medicalrag_infra.persistence.users import SqlUserRepository
@@ -34,8 +34,8 @@ async def repo() -> SqlUserRepository:
 
 
 async def test_user_roundtrip_on_real_postgres(repo: SqlUserRepository):
-    email = f"it-{uuid.uuid7()}@example.com"
-    user = User(id=str(uuid.uuid7()), email=email, password_hash="hash")
+    email = f"it-{uuid7()}@example.com"
+    user = User(id=str(uuid7()), email=email, password_hash="hash")
     await repo.create(user)
     found = await repo.get_by_email(email)
     assert found is not None

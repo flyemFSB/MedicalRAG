@@ -3,7 +3,6 @@
 // 响应为 snake_case（OpenAPI 契约），在此映射为前端 camelCase 领域类型（lib/types.ts）。
 import type { components } from "../api/schema";
 import type {
-  AuditEvent,
   Chunk,
   DashboardMetrics,
   Document,
@@ -13,10 +12,10 @@ import type {
   IntentNode,
   KnowledgeBase,
   ModelTarget,
-  PlatformCredential,
   QueryTermMapping,
   RunRecord,
   SampleQuestion,
+  StageStatus,
   User,
 } from "./types";
 
@@ -29,16 +28,14 @@ type IntentNodeRaw = schemas["IntentNodeOut"];
 type IngestionRunRaw = schemas["IngestionRunOut"];
 type MappingRaw = schemas["MappingOut"];
 type ModelTargetRaw = schemas["ModelTargetOut"];
-type CredentialRaw = schemas["CredentialOut"];
 type TraceRaw = schemas["TraceOut"];
 type UserRaw = schemas["medicalrag_api__api__admin__UserOut"];
 type WorkspaceRaw = schemas["WorkspaceOut"];
-type AuditRaw = schemas["AuditOut"];
-type SampleQuestionRaw = schemas["SampleQuestionOut"];
 type FeedbackRaw = schemas["FeedbackOut"];
 
-export type Credentials = schemas["Credentials"];
-export type UserOut = { id: string; email: string };
+type Credentials = schemas["Credentials"];
+// 认证用户契约（含 role，供前端权限门禁与 Topbar 条件渲染）直接来自 OpenAPI 生成类型
+export type UserOut = schemas["medicalrag_api__api__auth__UserOut"];
 
 export class ApiError extends Error {
   readonly status: number;
@@ -84,7 +81,6 @@ export function fetchHealth(): Promise<HealthStatus> {
 }
 
 // --- 聊天（生产前端经 Aegra v2 /api/agent 官方 useStreamRuntime 消费，见 screens/ChatScreen.tsx） ---
-// 注：非流式 sendChat / StreamCallbacks 已下线；/api/chat/stream 仅作本地开发调试路径。
 
 export interface ChatEvidenceOut {
   chunk_id: string;
@@ -107,10 +103,6 @@ export async function fetchDashboard(): Promise<DashboardMetrics> {
     failedRuns: raw.failed_runs,
     activeModelTargets: raw.active_model_targets,
     degradedModelTargets: raw.degraded_model_targets,
-    questionTrend: [],
-    ingestionTrend: [],
-    modelTargets: [],
-    recentRuns: [],
   };
 }
 
@@ -158,7 +150,9 @@ function doc(raw: DocumentRaw): Document {
 }
 
 export async function fetchDocuments(knowledgeBaseId: string): Promise<Document[]> {
-  const rows = await apiFetch<DocumentRaw[]>(`/api/admin/knowledge-bases/${knowledgeBaseId}/documents`);
+  const rows = await apiFetch<DocumentRaw[]>(
+    `/api/admin/knowledge-bases/${knowledgeBaseId}/documents`,
+  );
   return rows.map(doc);
 }
 
@@ -187,7 +181,7 @@ export async function fetchIngestionRuns(): Promise<IngestionRun[]> {
     stages: r.stages.map((s: Record<string, string>) => ({
       name: s.name,
       label: s.label,
-      status: s.status as "succeeded",
+      status: s.status as StageStatus,
     })),
     startedAt: r.started_at ?? "",
   }));
@@ -236,7 +230,6 @@ export async function fetchMappings(): Promise<QueryTermMapping[]> {
     id: r.id,
     term: r.term,
     intentNodeId: r.intent_node_id,
-    enabled: r.enabled,
     createdAt: r.created_at ?? "",
   }));
 }
@@ -248,7 +241,7 @@ export function createMapping(input: { term: string; intentNodeId: string }): Pr
   });
 }
 
-// --- 模型目标 / 凭据 ---
+// --- 模型目标 ---
 export async function fetchModelTargets(): Promise<ModelTarget[]> {
   const rows = await apiFetch<ModelTargetRaw[]>("/api/admin/model-targets");
   return rows.map((r) => ({
@@ -258,27 +251,15 @@ export async function fetchModelTargets(): Promise<ModelTarget[]> {
     model: r.model,
     capabilities: r.capabilities ?? [],
     status: r.status as ModelTarget["status"],
-    credentialBound: false,
     circuitState: r.circuit_state as ModelTarget["circuitState"],
   }));
 }
 
-export async function fetchCredentials(): Promise<PlatformCredential[]> {
-  const rows = await apiFetch<CredentialRaw[]>("/api/admin/credentials");
-  return rows.map((r) => ({
-    id: r.id,
-    providerName: r.provider_name,
-    boundTargetId: r.bound_target_id ?? "",
-    lastTestedAt: r.last_tested_at ?? undefined,
-    lastTestResult: (r.last_test_result ?? "untested") as PlatformCredential["lastTestResult"],
-  }));
-}
-
 // --- 追踪 ---
-export async function fetchRuns(): Promise<RunRecord[]> {
-  const rows = await apiFetch<TraceRaw[]>("/api/admin/traces");
-  return rows.map((r) => ({
-    id: r.id,
+function mapTrace(r: TraceRaw): RunRecord {
+  return {
+    // 后端 TraceOut 仅含 run_id；id 保留为运行记录在 UI 表格中的稳定键
+    id: r.run_id,
     runId: r.run_id,
     conversationId: r.conversation_id,
     question: r.question,
@@ -286,7 +267,22 @@ export async function fetchRuns(): Promise<RunRecord[]> {
     latencyMs: r.latency_ms,
     traceId: r.trace_id ?? undefined,
     createdAt: r.created_at ?? "",
-  }));
+  };
+}
+
+export async function fetchRuns(): Promise<RunRecord[]> {
+  const rows = await apiFetch<TraceRaw[]>("/api/admin/traces");
+  return rows.map(mapTrace);
+}
+
+/** 单条运行详情：直接命中详情端点，不在前端拉全表再 find（列表截断会误报“未找到”）。 */
+export async function fetchRun(runId: string): Promise<RunRecord | null> {
+  try {
+    return mapTrace(await apiFetch<TraceRaw>(`/api/admin/traces/${encodeURIComponent(runId)}`));
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 // --- 用户 / 工作区 ---
@@ -295,8 +291,6 @@ export async function fetchUsers(): Promise<User[]> {
   return rows.map((r) => ({
     id: r.id,
     email: r.email,
-    role: r.role === "admin" ? "admin" : "member",
-    status: r.status === "active" ? "active" : "disabled",
     createdAt: r.created_at ?? "",
   }));
 }
@@ -311,28 +305,11 @@ export async function fetchWorkspaces(): Promise<import("./types").Workspace[]> 
   }));
 }
 
-// --- 审计 / 样例问题 ---
-export async function fetchAuditEvents(): Promise<AuditEvent[]> {
-  const rows = await apiFetch<AuditRaw[]>("/api/admin/audit");
-  return rows.map((r) => ({
-    id: r.id,
-    actorEmail: r.actor_email,
-    action: r.action,
-    entityType: r.entity_type,
-    entityName: r.entity_name,
-    detail: r.detail,
-    createdAt: r.created_at ?? "",
-  }));
-}
-
+// --- 样例问题 ---
 export async function fetchSampleQuestions(): Promise<SampleQuestion[]> {
-  const rows = await apiFetch<SampleQuestionRaw[]>("/api/admin/sample-questions");
-  return rows.map((r) => ({
-    id: r.id,
-    text: r.text,
-    enabled: r.enabled,
-    createdAt: r.created_at ?? "",
-  }));
+  // 用户侧端点（/api/sample-questions）：服务端只回已启用项（SampleQuestionPublic），全体登录用户可见
+  const rows = await apiFetch<schemas["SampleQuestionPublic"][]>("/api/sample-questions");
+  return rows.map((r) => ({ id: r.id, text: r.text }));
 }
 
 // --- 反馈 ---
@@ -348,13 +325,8 @@ export async function fetchFeedback(): Promise<FeedbackItem[]> {
   }));
 }
 
-// --- 会话（用户侧） ---
-export interface ConversationOut {
-  id: string;
-  title: string;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
+// --- 会话（用户侧；契约类型直接复用 OpenAPI 生成物，不手写重复 DTO） ---
+export type ConversationOut = schemas["ConversationOut"];
 
 export async function fetchConversations(): Promise<ConversationOut[]> {
   return apiFetch<ConversationOut[]>("/api/conversations");
@@ -368,12 +340,7 @@ export function createConversation(title = "新会话"): Promise<ConversationOut
 }
 
 // --- 反馈提交（用户侧） ---
-export function submitFeedback(body: {
-  message_id: string;
-  conversation_id: string;
-  value: "like" | "dislike";
-  comment?: string;
-}): Promise<{ status: string }> {
+export function submitFeedback(body: schemas["FeedbackIn"]): Promise<{ status: string }> {
   return apiFetch<{ status: string }>("/api/feedback", {
     method: "POST",
     body: JSON.stringify(body),

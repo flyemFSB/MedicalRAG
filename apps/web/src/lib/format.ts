@@ -1,21 +1,22 @@
 // 展示格式化工具（中文 UI 文案；时间用相对时间，遵循 DESIGN 状态性而非装饰）。
 import type { SemStatus } from "./types";
 
-/** 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / 具体日期。 */
+/** 相对时间：用 Intl.RelativeTimeFormat 生成中文相对时间，超 7 天回落具体日期。 */
 export function relativeTime(iso: string | undefined): string {
   if (!iso) return "—";
   const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = now - then;
   if (Number.isNaN(then)) return "—";
-  const minute = 60_000;
-  const hour = 3_600_000;
-  const day = 86_400_000;
-  if (diff < minute) return "刚刚";
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
-  return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  const diff = Date.now() - then;
+  const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" });
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return rtf.format(-Math.floor(diff / 60_000), "minute");
+  if (diff < 86_400_000) return rtf.format(-Math.floor(diff / 3_600_000), "hour");
+  if (diff < 7 * 86_400_000) return rtf.format(-Math.floor(diff / 86_400_000), "day");
+  return new Date(iso).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 }
 
 /** 完整日期时间（表格列用）。 */
@@ -24,8 +25,11 @@ export function formatDateTime(iso: string | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -84,6 +88,20 @@ export const runOutcomeLabel: Record<string, string> = {
   fallback: "降级回答",
   cancelled: "已取消",
   failed: "失败",
+};
+
+/** 模型目标健康状态 → 中文文案。 */
+export const modelTargetStatusLabel: Record<string, string> = {
+  healthy: "健康",
+  degraded: "降级",
+  unreachable: "不可达",
+};
+
+/** 熔断器状态 → 中文文案。 */
+export const circuitStateLabel: Record<string, string> = {
+  closed: "关闭",
+  open: "熔断",
+  "half-open": "半开",
 };
 
 /** 文档格式中文名。 */

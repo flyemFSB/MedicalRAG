@@ -16,13 +16,7 @@ export type IngestionStatus =
   | "failed";
 
 /** 运行结果（对应聊天状态机的终态）。 */
-export type RunOutcome =
-  | "completed"
-  | "guidance"
-  | "empty"
-  | "fallback"
-  | "cancelled"
-  | "failed";
+export type RunOutcome = "completed" | "guidance" | "empty" | "fallback" | "cancelled" | "failed";
 
 /** 语义状态（与 DESIGN.md §2.3 一致，供状态徽章使用）。 */
 export type SemStatus = "success" | "warning" | "error" | "info" | "neutral";
@@ -93,7 +87,6 @@ export interface QueryTermMapping {
   id: string;
   term: string;
   intentNodeId: string;
-  enabled: boolean;
   createdAt: string;
 }
 
@@ -105,17 +98,7 @@ export interface ModelTarget {
   model: string;
   capabilities: string[];
   status: "healthy" | "degraded" | "unreachable";
-  credentialBound: boolean;
   circuitState: "closed" | "open" | "half-open";
-}
-
-/** 平台模型凭据（操作者管理，不成为工作区数据）。 */
-export interface PlatformCredential {
-  id: string;
-  providerName: string;
-  boundTargetId: string;
-  lastTestedAt?: string;
-  lastTestResult: "ok" | "fail" | "untested";
 }
 
 /** 业务运行记录（追踪：PostgreSQL 权威生命周期，观测后端仅承载 AI/RAG 详情）。 */
@@ -134,8 +117,6 @@ export interface RunRecord {
 export interface User {
   id: string;
   email: string;
-  role: "member" | "admin";
-  status: "active" | "disabled";
   createdAt: string;
 }
 
@@ -147,23 +128,10 @@ export interface Workspace {
   createdAt: string;
 }
 
-/** 审计事件 / 操作变更日志。 */
-export interface AuditEvent {
-  id: string;
-  actorEmail: string;
-  action: string;
-  entityType: string;
-  entityName: string;
-  detail: string;
-  createdAt: string;
-}
-
-/** 样例问题（推荐问题配置）。 */
+/** 样例问题（欢迎页推荐问题；服务端仅返回已启用项）。 */
 export interface SampleQuestion {
   id: string;
   text: string;
-  enabled: boolean;
-  createdAt: string;
 }
 
 /** 反馈审核条目（对回答的反馈）。 */
@@ -176,7 +144,7 @@ export interface FeedbackItem {
   createdAt: string;
 }
 
-/** 仪表盘 KPI 面板（摄取/聊天/模型/检索指标）。 */
+/** 仪表盘 KPI 面板（摄取/聊天/模型/检索指标）。趋势与明细区块待后端补齐后回加。 */
 export interface DashboardMetrics {
   totalChats: number;
   totalQuestions: number;
@@ -185,15 +153,6 @@ export interface DashboardMetrics {
   failedRuns: number;
   activeModelTargets: number;
   degradedModelTargets: number;
-  questionTrend: TrendPoint[];
-  ingestionTrend: TrendPoint[];
-  modelTargets: ModelTarget[];
-  recentRuns: RunRecord[];
-}
-
-export interface TrendPoint {
-  date: string; // yyyy-mm-dd
-  value: number;
 }
 
 /** 服务健康检查（ready 运行时形状；契约补齐响应模型后替换为生成类型）。 */

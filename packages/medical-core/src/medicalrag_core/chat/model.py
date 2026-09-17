@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..evidence.evidence import Evidence
 from ..intent.node import IntentNode
@@ -30,10 +29,9 @@ class Message:
 
 @dataclass(frozen=True, slots=True)
 class MemoryContext:
-    """会话最近的有界记忆窗口与可选的历史摘要。"""
+    """会话最近的有界记忆窗口。"""
 
     messages: tuple[Message, ...] = ()
-    summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,19 +56,20 @@ class Analysis:
     ``guidance_message`` 为意图存疑或无法安全区分时的有界澄清引导语；
     ``system_message`` 为 SYSTEM 意图的系统预设响应文案。两者均由适配器输出，
     对于未知或格式错误的分类输出，系统一律不臆造任何意图。
-    ``slots`` 为分类器针对各意图 ID 提取的原始槽位值（随后由领域层依据模式确定性解析）。
     """
 
     rewritten_question: str
     candidates: tuple[ScoredIntent, ...]
     guidance_message: str | None = None
     system_message: str | None = None
-    slots: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    # 问题拆分出的子问题（问题重写 + 拆分，检索时作为附加查询文本扩展召回视角）
+    sub_questions: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         """对外导出的分析结果载荷（SSE 端点与 Agent Graph 共享该统一出口）。"""
         return {
             "rewritten_question": self.rewritten_question,
+            "sub_questions": list(self.sub_questions),
             "intents": [{"node_id": c.node_id, "score": c.score} for c in self.candidates],
             "guidance": self.guidance_message,
         }
@@ -94,15 +93,14 @@ class GenerationContext:
 
 @dataclass(frozen=True, slots=True)
 class IntentQuery:
-    """单次落地检索的意图及其已提取的槽位。
+    """单次落地检索的意图及其查询文本。
 
     ``rewritten_question`` 为分类器重写后的用户问题：混合检索（Hybrid Retrieval）
-    的稠密与稀疏查询均以该文本为主体，并附加槽位中的医学实体（Medical Entity）；
+    的稠密与稀疏查询均以该文本为主体；
     意图节点的名称与描述仅在重写文本缺失时作为兜底，不作为查询主体。
     """
 
     node: IntentNode
-    slots: Mapping[str, object] = field(default_factory=dict)
     rewritten_question: str = ""
 
 
@@ -115,7 +113,6 @@ class Outcome(enum.StrEnum):
     SAFETY = "safety"
     EMPTY = "empty"
     FALLBACK = "fallback"
-    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,3 +130,5 @@ class ChatResult:
     safety: SafetyAssessment | None = None
     trace_id: str | None = None
     retrieval_policy_version: int | None = None
+    # 落库后的助手消息 ID：前端反馈（点赞/点踩）以此为准，保证反馈可回溯到具体消息行
+    message_id: str | None = None

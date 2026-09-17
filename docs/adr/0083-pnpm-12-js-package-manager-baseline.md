@@ -53,8 +53,8 @@ node install.js`）被拦截后产出的 bin 均不可用，npm 安装路径在�
   该状态在 pnpm 11 下同样存在，运行时无碍（contract-check 绿），TS 6 钉版见
   version-baseline §4。
 - 三处钉版需同步维护：根 `package.json` `packageManager`、CI action 行为、
-  version-baseline §4；升级任一组件须重跑 web 门禁（turbo lint/typecheck/
-  test:unit/build、contract-check、audit）与 CI docker build。
+  version-baseline §4；升级任一组件须重跑 web 门禁（pnpm --filter @medicalrag/web
+  run check、contract-check、audit）与 CI docker build。
 - 本机 `pnpm -r audit` 在 npmmirror 镜像源上不可用（镜像未实现 audit bulk 端点，
   与 pnpm 版本无关）；本地等价命令追加 `--registry=https://registry.npmjs.org`。
 

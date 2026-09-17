@@ -15,7 +15,7 @@ class ObjectRef:
 
 
 class ObjectStorage(Protocol):
-    """对象存储适配器端口：提供 put / get 能力；底层存储严格按工作区隔离，且 Key 不可猜测（多租户安全隔离）。"""
+    """对象存储适配器端口：提供 put / get 能力；底层存储严格按工作区隔离，且 Key 不可猜测（工作区安全隔离）。"""
 
     async def put(self, workspace_id: str, data: bytes, *, content_type: str) -> ObjectRef: ...
     async def get(self, ref: ObjectRef) -> bytes: ...

@@ -1,0 +1,65 @@
+# 合并级集成门禁：用真 PostgreSQL 跑全量测试（ADR 0080：集成/E2E 属合并级，不进 PR 级）。
+#
+# 为什么需要这个 workflow：`integration` 用例默认 skipif 跳过，此前仓库里没有任何机器载体
+# 会在真库上跑它们——「门禁绿」不等于「集成测过」。这里把同一批用例放到真 PostgreSQL 上再跑一遍，
+# 仓储层（packages/infra）顺带在真方言下验证 timestamptz/uuid/约束语义。
+name: integration
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 最小权限：默认只读
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # uv 与镜像 tag 三处对齐钉版（version-baseline §1/§5）；升级需同批更新
+  UV_VERSION: "0.12.10"
+  # 与 compose test profile 的 postgres-test 凭据/端口一致（127.0.0.1 避免 localhost→::1 挂起）
+  MEDICALRAG_TEST_DATABASE_URL: postgresql+asyncpg://medicalrag_test:medicalrag_test@127.0.0.1:5433/medicalrag_test
+
+jobs:
+  integration:
+    name: Integration（真 PostgreSQL）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        # 与 compose 的 postgres-test 同 tag（version-baseline 钉版）
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_USER: medicalrag_test
+          POSTGRES_PASSWORD: medicalrag_test
+          POSTGRES_DB: medicalrag_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U medicalrag_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Sync（locked：与 lockfile 不一致即失败，禁自动改锁）
+        run: uv sync --locked --all-packages
+      - name: 环境守卫（缺 URL 时 integration 用例静默跳过 → 门禁假绿）
+        run: test -n "$MEDICALRAG_TEST_DATABASE_URL"
+      - name: 全量测试（真 PostgreSQL 方言）
+        run: |
+          set -o pipefail
+          uv run pytest -q | tee pytest.log
+          # skip 会让门禁静默失效：用例没跑却报绿，比红更危险
+          if grep -qE "[0-9]+ skipped" pytest.log; then
+            echo "::error::有测试被跳过，集成门禁不成立"
+            exit 1
+          fi

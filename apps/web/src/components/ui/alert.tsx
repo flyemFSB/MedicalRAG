@@ -1,20 +1,15 @@
-import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
-
+import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-/* 语义告警（DESIGN §5.3：安全边界等最高信号用 medical 变体，禁用 border-left 强调）。 */
 const alertVariants = cva(
-  "relative grid w-full grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 rounded-lg border p-4 text-body-sm",
+  "group/alert relative grid w-full gap-0.5 rounded-lg border px-2.5 py-2 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "border-border bg-card text-body",
-        info: "border-info/30 bg-info-soft text-info",
-        success: "border-success/30 bg-success-soft text-success",
-        warning: "border-warning/30 bg-warning-soft text-warning",
-        error: "border-error/30 bg-error-soft text-error",
-        medical: "border-medical/40 bg-medical-soft text-medical",
+        default: "bg-card text-card-foreground",
+        destructive:
+          "border-destructive/30 bg-destructive/10 text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
       },
     },
     defaultVariants: {
@@ -42,7 +37,10 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-title"
-      className={cn("col-start-2 font-semibold leading-snug text-ink", className)}
+      className={cn(
+        "font-medium group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
+        className,
+      )}
       {...props}
     />
   );
@@ -52,20 +50,13 @@ function AlertDescription({ className, ...props }: React.ComponentProps<"div">) 
   return (
     <div
       data-slot="alert-description"
-      className={cn("col-start-2 text-body-sm leading-relaxed", className)}
+      className={cn(
+        "text-sm text-balance text-muted-foreground md:text-pretty [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
+        className,
+      )}
       {...props}
     />
   );
 }
 
-function AlertIcon({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-icon"
-      className={cn("col-start-1 row-span-2 row-start-1 grid size-5 place-items-center", className)}
-      {...props}
-    />
-  );
-}
-
-export { Alert, AlertDescription, AlertIcon, AlertTitle, alertVariants };
+export { Alert, AlertTitle, AlertDescription };

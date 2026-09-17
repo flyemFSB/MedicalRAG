@@ -22,14 +22,19 @@ async def test_in_memory_rate_limiter_is_per_key():
     assert await limiter.acquire("b", limit=1, window_s=60)
 
 
-async def test_metrics_snapshot_is_denatured():
+async def test_metrics_renders_counters_and_histograms():
     metrics = Metrics()
     metrics.inc("chat_runs_total")
     metrics.observe("run_latency_ms", 10)
-    metrics.observe("run_latency_ms", 30)
-    snapshot = metrics.snapshot()
-    assert snapshot["counters"]["chat_runs_total"] == 1
-    assert snapshot["latency_ms"]["run_latency_ms"]["p50"] == 10
+    text = metrics.render_prometheus()
+    assert "chat_runs_total" in text
+    assert "run_latency_ms_bucket" in text
+
+
+async def test_metrics_rejects_invalid_names():
+    metrics = Metrics()
+    with pytest.raises(ValueError):
+        metrics.inc("1-bad")
 
 
 async def test_local_object_storage_roundtrip(tmp_path):

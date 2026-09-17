@@ -1,2 +1,30 @@
-{"question":"高血压降压目标","relevant_chunk_ids":["c1"],"candidate_chunk_ids":["c1","c2"],"scores":[0.9,0.3],"intent_id":"htn","latency_ms":12,"answer":null,"ground_truth":null}
-{"question":"胸痛","relevant_chunk_ids":[],"candidate_chunk_ids":["c9"],"scores":[0.2],"intent_id":"urgent","latency_ms":8,"answer":null,"ground_truth":null}
+{"question":"高血压的降压目标值是多少","relevant_chunk_ids":["c1"],"candidate_chunk_ids":["c1","c2","c3","c4"],"scores":[0.92,0.41,0.33,0.21],"intent_id":"htn","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"高血压诊断界值","relevant_chunk_ids":["c1","c5"],"candidate_chunk_ids":["c1","c2","c5","c6"],"scores":[0.88,0.62,0.55,0.3],"intent_id":"htn","latency_ms":14,"answer":null,"ground_truth":null}
+{"question":"噻嗪类利尿剂的不良反应","relevant_chunk_ids":["c7"],"candidate_chunk_ids":["c7","c8","c9"],"scores":[0.85,0.5,0.42],"intent_id":"drug","latency_ms":11,"answer":null,"ground_truth":null}
+{"question":"ACEI 类药物禁忌","relevant_chunk_ids":["c9"],"candidate_chunk_ids":["c8","c9","c10"],"scores":[0.4,0.83,0.35],"intent_id":"drug","latency_ms":13,"answer":null,"ground_truth":null}
+{"question":"急性胸痛的鉴别诊断","relevant_chunk_ids":["c11","c12"],"candidate_chunk_ids":["c11","c12","c13"],"scores":[0.9,0.81,0.44],"intent_id":"urgent","latency_ms":18,"answer":null,"ground_truth":null}
+{"question":"主动脉夹层的急救处理","relevant_chunk_ids":["c13"],"candidate_chunk_ids":["c11","c14","c13"],"scores":[0.55,0.3,0.87],"intent_id":"urgent","latency_ms":21,"answer":null,"ground_truth":null}
+{"question":"2 型糖尿病的诊断标准","relevant_chunk_ids":["c15"],"candidate_chunk_ids":["c15","c16","c17"],"scores":[0.94,0.36,0.28],"intent_id":"dm","latency_ms":10,"answer":null,"ground_truth":null}
+{"question":"二甲双胍的适用人群","relevant_chunk_ids":["c16"],"candidate_chunk_ids":["c16","c18"],"scores":[0.9,0.31],"intent_id":"drug","latency_ms":9,"answer":null,"ground_truth":null}
+{"question":"糖尿病肾病分期","relevant_chunk_ids":["c17","c19"],"candidate_chunk_ids":["c17","c19","c20"],"scores":[0.76,0.66,0.4],"intent_id":"dm","latency_ms":15,"answer":null,"ground_truth":null}
+{"question":"心电图 ST 段抬高的意义","relevant_chunk_ids":["c12"],"candidate_chunk_ids":["c12","c21"],"scores":[0.91,0.38],"intent_id":"urgent","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"房颤的抗凝策略","relevant_chunk_ids":["c22"],"candidate_chunk_ids":["c22","c23","c24"],"scores":[0.89,0.47,0.22],"intent_id":"drug","latency_ms":16,"answer":null,"ground_truth":null}
+{"question":"华法林的 INR 监测目标","relevant_chunk_ids":["c23"],"candidate_chunk_ids":["c22","c24","c23"],"scores":[0.62,0.35,0.86],"intent_id":"drug","latency_ms":13,"answer":null,"ground_truth":null}
+{"question":"支气管哮喘的分级治疗","relevant_chunk_ids":["c25","c26"],"candidate_chunk_ids":["c25","c26","c27"],"scores":[0.87,0.72,0.33],"intent_id":"resp","latency_ms":17,"answer":null,"ground_truth":null}
+{"question":"吸入性糖皮质激素的常见副作用","relevant_chunk_ids":["c27"],"candidate_chunk_ids":["c27","c28"],"scores":[0.84,0.39],"intent_id":"drug","latency_ms":11,"answer":null,"ground_truth":null}
+{"question":"社区获得性肺炎的一线用药","relevant_chunk_ids":["c28"],"candidate_chunk_ids":["c28","c29"],"scores":[0.88,0.42],"intent_id":"resp","latency_ms":14,"answer":null,"ground_truth":null}
+{"question":"慢性阻塞性肺疾病急性加重的处理","relevant_chunk_ids":["c29","c25"],"candidate_chunk_ids":["c29","c25","c30"],"scores":[0.85,0.58,0.36],"intent_id":"resp","latency_ms":19,"answer":null,"ground_truth":null}
+{"question":"甲状腺功能减退的替代治疗","relevant_chunk_ids":["c30"],"candidate_chunk_ids":["c30","c31"],"scores":[0.9,0.29],"intent_id":"endo","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"桥本甲状腺炎的抗体指标","relevant_chunk_ids":["c31"],"candidate_chunk_ids":["c31","c15"],"scores":[0.81,0.33],"intent_id":"endo","latency_ms":10,"answer":null,"ground_truth":null}
+{"question":"脑卒中溶栓时间窗","relevant_chunk_ids":["c32"],"candidate_chunk_ids":["c32","c11"],"scores":[0.95,0.4],"intent_id":"urgent","latency_ms":22,"answer":null,"ground_truth":null}
+{"question":"他汀类药物的肌肉毒性","relevant_chunk_ids":["c33"],"candidate_chunk_ids":["c33","c7"],"scores":[0.86,0.37],"intent_id":"drug","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"儿童发热的处理原则","relevant_chunk_ids":["c34"],"candidate_chunk_ids":["c34","c35"],"scores":[0.83,0.4],"intent_id":"peds","latency_ms":13,"answer":null,"ground_truth":null}
+{"question":"新生儿黄疸的光疗指征","relevant_chunk_ids":["c35"],"candidate_chunk_ids":["c35","c34"],"scores":[0.79,0.45],"intent_id":"peds","latency_ms":15,"answer":null,"ground_truth":null}
+{"question":"幽门螺杆菌根除方案","relevant_chunk_ids":["c36"],"candidate_chunk_ids":["c36","c37"],"scores":[0.92,0.34],"intent_id":"gi","latency_ms":11,"answer":null,"ground_truth":null}
+{"question":"胃食管反流病的生活方式干预","relevant_chunk_ids":["c37"],"candidate_chunk_ids":["c37","c36"],"scores":[0.84,0.48],"intent_id":"gi","latency_ms":10,"answer":null,"ground_truth":null}
+{"question":"缺铁性贫血的补铁方案","relevant_chunk_ids":["c38"],"candidate_chunk_ids":["c38","c39"],"scores":[0.91,0.36],"intent_id":"hem","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"有关妊娠期用药的安全性分级","relevant_chunk_ids":[],"candidate_chunk_ids":["c7","c16","c23"],"scores":[0.31,0.28,0.25],"intent_id":"drug","latency_ms":14,"answer":null,"ground_truth":null}
+{"question":"罕见病渐进性多灶性白质脑病的治疗","relevant_chunk_ids":[],"candidate_chunk_ids":["c11","c32"],"scores":[0.22,0.18],"intent_id":"neuro","latency_ms":24,"answer":null,"ground_truth":null}
+{"question":"化疗引起的恶心呕吐的止吐方案","relevant_chunk_ids":["c39"],"candidate_chunk_ids":["c39","c28","c36"],"scores":[0.87,0.42,0.35],"intent_id":"onc","latency_ms":16,"answer":null,"ground_truth":null}
+{"question":"骨密度检查的适应证","relevant_chunk_ids":["c40","c38"],"candidate_chunk_ids":["c40","c38","c39"],"scores":[0.8,0.52,0.3],"intent_id":"exam","latency_ms":12,"answer":null,"ground_truth":null}
+{"question":"疫苗接种的常见禁忌","relevant_chunk_ids":["c41"],"candidate_chunk_ids":["c41","c34","c35"],"scores":[0.89,0.36,0.28],"intent_id":"peds","latency_ms":9,"answer":null,"ground_truth":null}

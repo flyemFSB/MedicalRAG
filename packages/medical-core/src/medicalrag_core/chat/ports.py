@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from ..evidence.evidence import Candidate
 from ..intent.node import IntentNode
+from ..intent.tree import ScoredIntent
 from .model import (
     Analysis,
     ChatRequest,
@@ -28,10 +29,22 @@ class ProviderUnavailableError(RuntimeError):
 
 
 class Memory(Protocol):
-    """会话记忆端口：负责加载有界最近消息窗口，并按角色追加新消息。"""
+    """会话记忆端口：加载有界最近消息窗口（含摘要），按角色追加新消息并返回落库消息 ID。"""
 
     async def load(self, request: ChatRequest) -> MemoryContext: ...
-    async def append(self, request: ChatRequest, message: Message) -> None: ...
+    async def append(self, request: ChatRequest, message: Message) -> str | None: ...
+
+
+class ConversationSummarizer(Protocol):
+    """会话摘要端口（外部模型适配器）：将对话记录压缩为一段简短摘要文本。"""
+
+    async def summarize(self, transcript: str) -> str: ...
+
+
+class TermIntentResolver(Protocol):
+    """查询词映射端口：将用户问题中命中的术语映射为强制纳入的意图候选（运营配置的确定性捷径）。"""
+
+    async def resolve(self, question: str) -> tuple[ScoredIntent, ...]: ...
 
 
 class IntentClassifier(Protocol):
@@ -56,18 +69,7 @@ class Retriever(Protocol):
 
 
 class Generator(Protocol):
-    """模型生成适配器端口：整段生成证据回答（Evidence Answer）；整体不可用时抛出 ProviderUnavailableError。"""
-
-    async def generate(self, context: GenerationContext) -> str: ...
-
-
-@runtime_checkable
-class StreamingGenerator(Protocol):
-    """流式生成端口（直接流式直出，不设阻塞式缓冲门）；逐段产出回答文本。
-
-    声明为 runtime_checkable：编排层通过 isinstance 探测适配器的流式生成能力。
-    实现方法为 async generator 异步生成器函数。
-    """
+    """模型生成适配器端口：流式产出证据回答（Evidence Answer）；整体不可用时抛出 ProviderUnavailableError。"""
 
     def stream(self, context: GenerationContext) -> AsyncIterator[str]: ...
 

@@ -1,30 +1,51 @@
 """运营管理控制台 API 路由（需 operator 权限授权；对应产品规范用户故事 26-33 的运营数据面）。
 
 各端点精确对应前端运营后台的各个业务管理模块；全部经由 OperatorRepositories 读写 PostgreSQL 关系库。
-涵盖管理看板与性能追踪读面、知识库/文档/切片管理、摄取作业运行历史、意图树与术语映射配置、
-模型目标与平台凭据管理、用户与工作区管理、操作审计日志、推荐样例问题、以及用户反馈管理。
+涵盖管理看板与性能追踪读面、知识库/文档/分块管理、摄取作业运行历史、意图树与术语映射配置、
+模型目标管理、用户与工作区管理、以及用户反馈管理。
+
+权限语义（刻意设计）：operator 是**平台级**角色（OPERATOR_EMAILS 白名单授予，见 deps.require_operator），
+因此本模块的读/写按设计跨工作区；按 workspace_id 再过滤会让运营台看不到全平台数据。
+与之相对，面向普通用户的对象级写路径必须校验归属（见 feedback.submit_feedback）。
 """
 
 from __future__ import annotations
 
 import dataclasses
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from medicalrag_core.ingestion.knowledge import KnowledgeBase
+from medicalrag_core.ids import uuid7
+from medicalrag_core.ingestion.knowledge import Document, KnowledgeBase
 from medicalrag_core.ingestion.state_machine import IngestionRunState
-from medicalrag_core.outbox import OutboxMessage
+from medicalrag_core.records import OutboxMessage
 from medicalrag_infra.persistence.models import ChatRun, QueryTermMappingRow
+from medicalrag_infra.persistence.operator import OperatorRepositories
 
 from ..deps import OperatorCtx
 
 router = APIRouter(prefix="/api/admin")
 
 
-def _repos(request: Request):
+def _repos(request: Request) -> OperatorRepositories:
     return request.app.state.operator
+
+
+async def _append_outbox(
+    repos: OperatorRepositories, *, aggregate_type: str, aggregate_id: str, event_type: str
+) -> None:
+    await repos.outbox.append(
+        OutboxMessage(
+            id=str(uuid7()),
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            event_type=event_type,
+            payload={},
+        )
+    )
 
 
 def _require_uuid(raw: str) -> uuid.UUID:
@@ -50,20 +71,21 @@ class DashboardOut(BaseModel):
 
 @router.get("/dashboard")
 async def dashboard(ctx: OperatorCtx, request: Request) -> DashboardOut:
+    """运营看板：operator 为平台级角色，统计口径为全平台（不按当前个人工作区过滤）。"""
     repos = _repos(request)
     targets = await repos.model_targets.list_all()
     return DashboardOut(
-        total_chats=await repos.runs.conversation_count(ctx.workspace_id),
-        total_questions=await repos.runs.question_count(ctx.workspace_id),
-        avg_latency_ms=await repos.runs.avg_latency_ms(ctx.workspace_id),
-        published_docs=await repos.runs.published_docs(ctx.workspace_id),
-        failed_runs=await repos.runs.failed_runs(ctx.workspace_id),
+        total_chats=await repos.runs.conversation_count(),
+        total_questions=await repos.runs.question_count(),
+        avg_latency_ms=await repos.runs.avg_latency_ms(),
+        published_docs=await repos.runs.published_docs(),
+        failed_runs=await repos.runs.failed_runs(),
         active_model_targets=sum(1 for t in targets if t.circuit_allows),
         degraded_model_targets=sum(1 for t in targets if not t.circuit_allows),
     )
 
 
-# --- 知识库 / 文档 / 切片 ---
+# --- 知识库 / 文档 / 分块 ---
 
 
 class KnowledgeBaseOut(BaseModel):
@@ -71,7 +93,6 @@ class KnowledgeBaseOut(BaseModel):
     name: str
     description: str
     document_count: int
-    chunk_count: int
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -81,23 +102,23 @@ class KnowledgeBaseIn(BaseModel):
     description: str = ""
 
 
+def _kb_out(kb: KnowledgeBase, *, document_count: int = 0) -> KnowledgeBaseOut:
+    return KnowledgeBaseOut(
+        id=kb.id,
+        name=kb.name,
+        description=kb.description,
+        document_count=document_count,
+        created_at=kb.created_at,
+        updated_at=kb.updated_at,
+    )
+
+
 @router.get("/knowledge-bases")
 async def list_knowledge_bases(ctx: OperatorCtx, request: Request) -> list[KnowledgeBaseOut]:
     repos = _repos(request)
     rows = await repos.knowledge_bases.list_for_workspace(ctx.workspace_id)
     counts = await repos.documents.counts_by_kb(ctx.workspace_id)
-    return [
-        KnowledgeBaseOut(
-            id=kb.id,
-            name=kb.name,
-            description=kb.description,
-            document_count=counts.get(kb.id, 0),
-            chunk_count=0,
-            created_at=kb.created_at,
-            updated_at=kb.updated_at,
-        )
-        for kb in rows
-    ]
+    return [_kb_out(kb, document_count=counts.get(kb.id, 0)) for kb in rows]
 
 
 @router.post("/knowledge-bases", status_code=201)
@@ -107,21 +128,13 @@ async def create_knowledge_base(
     repos = _repos(request)
     kb = await repos.knowledge_bases.create(
         KnowledgeBase(
-            id=str(uuid.uuid7()),
+            id=str(uuid7()),
             workspace_id=ctx.workspace_id,
             name=body.name,
             description=body.description,
         )
     )
-    return KnowledgeBaseOut(
-        id=kb.id,
-        name=kb.name,
-        description=kb.description,
-        document_count=0,
-        chunk_count=0,
-        created_at=kb.created_at,
-        updated_at=kb.updated_at,
-    )
+    return _kb_out(kb)
 
 
 class DocumentOut(BaseModel):
@@ -157,7 +170,7 @@ async def list_documents(kb_id: str, _: OperatorCtx, request: Request) -> list[D
     ]
 
 
-async def _require_document(repos, doc_id: str):
+async def _require_document(repos: OperatorRepositories, doc_id: str) -> Document:
     document = await repos.documents.get(doc_id)
     if document is None:
         raise HTTPException(status_code=404, detail="文档不存在")
@@ -166,18 +179,12 @@ async def _require_document(repos, doc_id: str):
 
 @router.post("/documents/{doc_id}/unpublish", status_code=202)
 async def unpublish_document(doc_id: str, ctx: OperatorCtx, request: Request) -> None:
-    """下架文档：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。"""
+    """下架文档：经由 Outbox 清除向量点的检索发布资格，使分块退出检索；操作完全可逆。"""
     _require_uuid(doc_id)
     repos = _repos(request)
     await _require_document(repos, doc_id)
-    await repos.outbox.append(
-        OutboxMessage(
-            id=str(uuid.uuid7()),
-            aggregate_type="document",
-            aggregate_id=doc_id,
-            event_type="document.unpublish",
-            payload={},
-        )
+    await _append_outbox(
+        repos, aggregate_type="document", aggregate_id=doc_id, event_type="document.unpublish"
     )
 
 
@@ -189,51 +196,46 @@ async def republish_document(doc_id: str, ctx: OperatorCtx, request: Request) ->
     document = await _require_document(repos, doc_id)
     if document.ingestion_state is not IngestionRunState.PUBLISHED:
         raise HTTPException(status_code=409, detail="文档尚未完成发布流程")
-    await repos.outbox.append(
-        OutboxMessage(
-            id=str(uuid.uuid7()),
-            aggregate_type="document",
-            aggregate_id=doc_id,
-            event_type="document.publish",
-            payload={},
-        )
+    await _append_outbox(
+        repos, aggregate_type="document", aggregate_id=doc_id, event_type="document.publish"
     )
 
 
 @router.delete("/documents/{doc_id}", status_code=202)
 async def delete_document(doc_id: str, ctx: OperatorCtx, request: Request) -> None:
-    """级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
+    """级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的分块和文档实体行。
 
-    仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。
+    仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿分块。
     """
     _require_uuid(doc_id)
     repos = _repos(request)
     document = await _require_document(repos, doc_id)
     if document.ingestion_state not in {IngestionRunState.PUBLISHED, IngestionRunState.FAILED}:
         raise HTTPException(status_code=409, detail="文档摄取未结束，暂不能删除")
-    await repos.outbox.append(
-        OutboxMessage(
-            id=str(uuid.uuid7()),
-            aggregate_type="document",
-            aggregate_id=doc_id,
-            event_type="document.delete",
-            payload={},
-        )
+    await _append_outbox(
+        repos, aggregate_type="document", aggregate_id=doc_id, event_type="document.delete"
     )
 
 
 @router.post("/maintenance/orphan-scan", status_code=202)
 async def trigger_orphan_scan(ctx: OperatorCtx, request: Request) -> None:
-    """手动触发孤儿切片对账与清理任务（供管理员按需触发）。"""
-    repos = _repos(request)
-    await repos.outbox.append(
-        OutboxMessage(
-            id=str(uuid.uuid7()),
-            aggregate_type="document",
-            aggregate_id=str(uuid.uuid7()),
-            event_type="document.scan_orphans",
-            payload={},
-        )
+    """手动触发孤儿分块对账与清理任务（供运营管理员按需触发）。"""
+    await _append_outbox(
+        _repos(request),
+        aggregate_type="document",
+        aggregate_id=str(uuid7()),
+        event_type="document.scan_orphans",
+    )
+
+
+@router.post("/maintenance/object-scan", status_code=202)
+async def trigger_object_scan(ctx: OperatorCtx, request: Request) -> None:
+    """手动触发对象存储孤儿对象对账与清理任务（清理未被任何摄取运行元数据引用的存储对象）。"""
+    await _append_outbox(
+        _repos(request),
+        aggregate_type="document",
+        aggregate_id=str(uuid7()),
+        event_type="objects.scan_orphans",
     )
 
 
@@ -268,24 +270,28 @@ async def list_chunks(doc_id: str, _: OperatorCtx, request: Request) -> list[Chu
 
 @router.get("/documents/{doc_id}/content")
 async def get_document_content(doc_id: str, _: OperatorCtx, request: Request):
-    """获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。"""
-    from fastapi.responses import Response
+    """获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。
+
+    流式产出（分块读取对象存储），不把最大 200MB 的原始对象整读进进程内存——
+    两个并发预览即可击穿容器内存上限。
+    """
+    from fastapi.responses import StreamingResponse
 
     from medicalrag_core.storage.ports import ObjectRef
 
     _require_uuid(doc_id)
     repos = _repos(request)
-    document = await repos.documents.get(doc_id)
-    if document is None:
-        raise HTTPException(status_code=404, detail="文档不存在")
+    document = await _require_document(repos, doc_id)
     object_key = await repos.ingestion_runs.object_key_for_document(doc_id)
     if not object_key:
         raise HTTPException(status_code=404, detail="文档尚未完成摄取，暂无可预览内容")
-    content = await request.app.state.object_storage.get(
-        ObjectRef(workspace_id=document.workspace_id, key=object_key)
-    )
     content_type = _content_type_for(document.format)
-    return Response(content=content, media_type=content_type)
+    return StreamingResponse(
+        request.app.state.object_storage.get_stream(
+            ObjectRef(workspace_id=document.workspace_id, key=object_key)
+        ),
+        media_type=content_type,
+    )
 
 
 def _content_type_for(format_: str) -> str:
@@ -315,25 +321,28 @@ class IngestionRunOut(BaseModel):
 
 @router.get("/ingestion-runs")
 async def list_ingestion_runs(ctx: OperatorCtx, request: Request) -> list[IngestionRunOut]:
+    """摄取运行历史（平台级全量；operator 数据面语义见模块 docstring）。"""
     repos = _repos(request)
-    rows = await repos.ingestion_runs.list_for_workspace(ctx.workspace_id)
+    rows = await repos.ingestion_runs.list_all()
     return [IngestionRunOut(**row) for row in rows]  # type: ignore[arg-type]
 
 
 @router.post("/ingestion-runs/{run_id}/retry")
 async def retry_ingestion_run(run_id: str, ctx: OperatorCtx, request: Request) -> dict[str, str]:
+    """重放失败的摄取运行：从记录的失败阶段复位续跑（而非从头重摄）。"""
+    _require_uuid(run_id)
     repos = _repos(request)
-    runs = await repos.ingestion_runs.list_for_workspace(ctx.workspace_id)
-    run = next((r for r in runs if r["id"] == run_id), None)
+    run = await repos.ingestion_runs.get_run(run_id)
     if run is None or run["status"] != IngestionRunState.FAILED.value:
         raise HTTPException(status_code=409, detail="仅 FAILED 运行可重试")
+    stage = run.get("failed_stage") or IngestionRunState.ACCEPTED.value
     await repos.outbox.append(
         OutboxMessage(
-            id=str(uuid.uuid7()),
+            id=str(uuid7()),
             aggregate_type="ingestion_run",
             aggregate_id=run_id,
             event_type="ingestion.stage",
-            payload={"stage": IngestionRunState.ACCEPTED.value},
+            payload={"stage": stage},
         )
     )
     return {"status": "ok"}
@@ -374,13 +383,15 @@ async def list_intent_tree(_: OperatorCtx, request: Request) -> list[IntentNodeO
 
 
 class IntentNodePatch(BaseModel):
+    """意图节点部分更新；枚举字段由 pydantic 在边界校验（非法值 422 而非 500）。"""
+
     name: str | None = None
     description: str | None = None
     examples: list[str] | None = None
     enabled: bool | None = None
-    safety_scope: str | None = None
+    safety_scope: Literal["treatment", "urgent", "prohibited"] | None = None
     parent_id: str | None = None
-    kind: str | None = None
+    kind: Literal["knowledge", "system"] | None = None
 
 
 @router.patch("/intent-tree/{node_id}")
@@ -413,7 +424,6 @@ class MappingOut(BaseModel):
     id: str
     term: str
     intent_node_id: str
-    enabled: bool
     created_at: str | None = None
 
 
@@ -422,7 +432,6 @@ def _mapping_out(row: QueryTermMappingRow) -> MappingOut:
         id=str(row.id),
         term=row.term,
         intent_node_id=row.intent_node_id,
-        enabled=row.enabled,
         created_at=str(row.created_at) if row.created_at else None,
     )
 
@@ -439,11 +448,15 @@ class MappingIn(BaseModel):
 
 @router.post("/query-term-mappings", status_code=201)
 async def create_mapping(body: MappingIn, _: OperatorCtx, request: Request) -> dict[str, str]:
+    # 边界校验：意图节点必须真实存在，脏映射静默入库会误导检索路由
+    nodes = await request.app.state.intent_tree_repo.list_nodes()
+    if body.intent_node_id not in {n.id for n in nodes}:
+        raise HTTPException(status_code=422, detail="意图节点不存在")
     await _repos(request).mappings.add(body.term, body.intent_node_id)
     return {"status": "ok"}
 
 
-# --- 模型目标 / 凭据 / 设置 ---
+# --- 模型目标 / 设置 ---
 
 
 class ModelTargetOut(BaseModel):
@@ -455,10 +468,6 @@ class ModelTargetOut(BaseModel):
     priority: int
     status: str
     circuit_state: str
-
-
-class ModelTargetPatch(BaseModel):
-    priority: int | None = None
 
 
 @router.get("/model-targets")
@@ -479,51 +488,10 @@ async def list_model_targets(_: OperatorCtx, request: Request) -> list[ModelTarg
     ]
 
 
-@router.patch("/model-targets/{target_id}")
-async def update_model_target(
-    target_id: str, body: ModelTargetPatch, _: OperatorCtx, request: Request
-) -> dict[str, str]:
-    repos = _repos(request)
-    targets = await repos.model_targets.list_all()
-    target = next((t for t in targets if t.id == target_id), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="模型目标不存在")
-    await repos.model_targets.save(
-        dataclasses.replace(
-            target, priority=body.priority if body.priority is not None else target.priority
-        )
-    )
-    return {"status": "ok"}
-
-
-class CredentialOut(BaseModel):
-    id: str
-    provider_name: str
-    bound_target_id: str | None
-    last_tested_at: str | None
-    last_test_result: str | None
-
-
-@router.get("/credentials")
-async def list_credentials(_: OperatorCtx, request: Request) -> list[CredentialOut]:
-    rows = await _repos(request).credentials.list_all()
-    return [
-        CredentialOut(
-            id=str(row.id),
-            provider_name=row.provider_name,
-            bound_target_id=str(row.bound_target_id) if row.bound_target_id else None,
-            last_tested_at=str(row.last_tested_at) if row.last_tested_at else None,
-            last_test_result=row.last_test_result,
-        )
-        for row in rows
-    ]
-
-
 # --- 追踪 ---
 
 
 class TraceOut(BaseModel):
-    id: str
     run_id: str
     conversation_id: str
     question: str
@@ -540,10 +508,9 @@ def _trace_out(run: ChatRun) -> TraceOut:
         else 0
     )
     return TraceOut(
-        id=str(run.id),
-        run_id=str(run.id)[:12],
+        run_id=str(run.id),
         conversation_id=str(run.conversation_id),
-        question=run.assistant_message or "",
+        question=run.question or "",
         outcome=run.outcome or run.status,
         latency_ms=latency,
         trace_id=run.trace_id,
@@ -553,15 +520,16 @@ def _trace_out(run: ChatRun) -> TraceOut:
 
 @router.get("/traces")
 async def list_traces(ctx: OperatorCtx, request: Request) -> list[TraceOut]:
-    runs = await _repos(request).runs.recent_runs(ctx.workspace_id, limit=100)
+    """追踪列表（平台级全量；operator 数据面语义见模块 docstring）。"""
+    runs = await _repos(request).runs.recent_runs(limit=100)
     return [_trace_out(run) for run in runs]
 
 
 @router.get("/traces/{run_id}")
 async def get_trace(run_id: str, ctx: OperatorCtx, request: Request) -> TraceOut:
-    repos = _repos(request)
-    runs = await repos.runs.recent_runs(ctx.workspace_id, limit=1000)
-    run = next((r for r in runs if str(r.id) == run_id), None)
+    """追踪详情：按主键直查（历史记录可达，且不拖全量列表线性查找）。"""
+    _require_uuid(run_id)
+    run = await _repos(request).runs.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="追踪记录不存在")
     return _trace_out(run)
@@ -573,9 +541,6 @@ async def get_trace(run_id: str, ctx: OperatorCtx, request: Request) -> TraceOut
 class UserOut(BaseModel):
     id: str
     email: str
-    role: str
-    workspace_name: str
-    status: str
     created_at: str | None
 
 
@@ -586,9 +551,6 @@ async def list_users(_: OperatorCtx, request: Request) -> list[UserOut]:
         UserOut(
             id=row["id"],
             email=row["email"],
-            role="admin",
-            workspace_name="",
-            status=row["status"],
             created_at=row["created_at"],
         )
         for row in rows
@@ -611,48 +573,7 @@ async def list_workspaces(_: OperatorCtx, request: Request) -> list[WorkspaceOut
     ]
 
 
-# --- 审计 / 样例问题 / 反馈 ---
-
-
-class AuditOut(BaseModel):
-    id: str
-    actor_email: str
-    action: str
-    entity_type: str
-    entity_name: str
-    detail: str
-    created_at: str | None
-
-
-@router.get("/audit")
-async def list_audit(ctx: OperatorCtx, request: Request) -> list[AuditOut]:
-    events = await _repos(request).audit.list_for_workspace(ctx.workspace_id)
-    return [
-        AuditOut(
-            id=e.id,
-            actor_email=e.actor_email,
-            action=e.action,
-            entity_type=e.entity_type,
-            entity_name=e.entity_name,
-            detail=e.detail,
-            created_at=e.created_at,
-        )
-        for e in events
-    ]
-
-
-class SampleQuestionOut(BaseModel):
-    id: str
-    text: str
-    intent_node_id: str | None
-    enabled: bool
-    created_at: str | None
-
-
-@router.get("/sample-questions")
-async def list_sample_questions(ctx: OperatorCtx, request: Request) -> list[SampleQuestionOut]:
-    rows = await _repos(request).sample_questions.list_for_workspace(ctx.workspace_id)
-    return [SampleQuestionOut(**row) for row in rows]  # type: ignore[arg-type]
+# --- 反馈 ---
 
 
 class FeedbackOut(BaseModel):
@@ -666,7 +587,8 @@ class FeedbackOut(BaseModel):
 
 @router.get("/feedback")
 async def list_feedback(ctx: OperatorCtx, request: Request) -> list[FeedbackOut]:
-    items = await _repos(request).feedback.list_for_workspace(ctx.workspace_id)
+    """用户反馈（平台级全量；operator 数据面语义见模块 docstring）。"""
+    items = await _repos(request).feedback.list_all()
     return [
         FeedbackOut(
             id=f.id,

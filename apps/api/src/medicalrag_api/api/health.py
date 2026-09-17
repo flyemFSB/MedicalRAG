@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -29,25 +31,26 @@ async def readiness(request: Request) -> JSONResponse:
         async with session_factory() as session:
             await session.execute(text("SELECT 1"))
         checks["database"] = "healthy"
-    except Exception:  # noqa: BLE001 —— 就绪探针对底层依赖异常自动降级为 degraded，保障探针自身不崩溃
+    except Exception:
         checks["database"] = "degraded"
-    redis_client = getattr(request.app.state, "redis_client", None)
-    redis_available = getattr(request.app.state, "redis_available", redis_client is not None)
+    redis_client = request.app.state.redis_client
+    redis_available = request.app.state.redis_available
     if redis_available and redis_client is not None:
         try:
             await redis_client.ping()
             checks["redis"] = "healthy"
-        except Exception:  # noqa: BLE001
+        except Exception:
             checks["redis"] = "degraded"
     else:
         # 显式本地降级策略（架构设计：本地优雅降级 + degraded 状态指示），不静默掩盖
         checks["redis"] = "degraded"
-    qdrant_client = getattr(request.app.state, "qdrant_client", None)
+    qdrant_client = request.app.state.qdrant_client
     if qdrant_client is not None:
         try:
-            qdrant_client.get_collections()
+            # 同步客户端：必须隔离到线程池，否则阻塞事件循环（检索适配器同样处理）
+            await asyncio.to_thread(qdrant_client.get_collections)
             checks["qdrant"] = "healthy"
-        except Exception:  # noqa: BLE001
+        except Exception:
             checks["qdrant"] = "degraded"
     status = "healthy" if all(value == "healthy" for value in checks.values()) else "degraded"
     return JSONResponse({"status": status, "checks": checks}, status_code=200)

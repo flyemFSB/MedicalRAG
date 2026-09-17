@@ -1,34 +1,33 @@
-import { createFileRoute, Link, Navigate, Outlet, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/react-router";
 import {
   Activity,
   ArrowRightLeft,
   Database,
   GitBranch,
   LayoutDashboard,
-  ListChecks,
   Menu,
   MessageSquareText,
-  ScanHeart,
-  ScrollText,
   Settings2,
   Upload,
   Users,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { useCurrentUser } from "../lib/queries";
+import { meQueryOptions } from "../lib/queries";
+import { BrandMark } from "../components/brand-mark";
 import { Button } from "../components/ui/button";
-import { Skeleton } from "../components/ui/skeleton";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "../components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../components/ui/sheet";
 import { cn } from "../lib/utils";
 
 export const Route = createFileRoute("/admin")({
+  // 鉴权必须在 beforeLoad：子路由 loader 先于组件执行，写在组件里的 <Navigate> 会让
+  // 未登录用户先发出 /api/admin/* 请求（401 重试放大），且把网络/5xx 误判为“未登录”。
+  // 角色门禁同理：me 契约携带 role，非 operator 一律拒绝进入运营台。
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions());
+    if (me === null) throw redirect({ to: "/login" });
+    if (me.role !== "operator") throw redirect({ to: "/" });
+  },
   component: AdminLayout,
 });
 
@@ -39,7 +38,8 @@ interface NavEntry {
   exact?: boolean;
 }
 
-const NAV_GROUPS: Array<{ title: string; items: NavEntry[] }> = [  {
+const NAV_GROUPS: Array<{ title: string; items: NavEntry[] }> = [
+  {
     title: "运营",
     items: [
       { to: "/admin/dashboard", label: "仪表盘", icon: LayoutDashboard, exact: true },
@@ -54,73 +54,58 @@ const NAV_GROUPS: Array<{ title: string; items: NavEntry[] }> = [  {
   },
   {
     title: "治理",
-    items: [
-      { to: "/admin/users", label: "用户与工作区", icon: Users, exact: true },
-      { to: "/admin/audit", label: "审计日志", icon: ScrollText, exact: true },
-      { to: "/admin/sample-questions", label: "样例问题", icon: ListChecks, exact: true },
-    ],
+    items: [{ to: "/admin/users", label: "用户与工作区", icon: Users, exact: true }],
   },
 ];
 
-/** 产品标记：accent 圆角方块 + 白 glyph（与根外壳同构）。 */
-function BrandMark() {
-  return (
-    <span className="grid size-6 shrink-0 place-items-center rounded-[6px] bg-primary text-primary-foreground" aria-hidden>
-      <ScanHeart className="size-4" />
-    </span>
-  );
-}
+/** 产品标记见 components/brand-mark.tsx。 */
 
 function AdminLayout() {
-  const { isAuthenticated, isPending } = useCurrentUser();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  if (isPending) {
-    return (
-      <div className="flex-1 p-6" aria-busy="true">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="mt-4 h-64 w-full" />
-      </div>
-    );
-  }
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-
   return (
-    <div className="flex min-h-0 flex-1">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-background md:flex">
-        <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+    <div className="flex min-h-0 flex-1 gap-2.5 overflow-hidden">
+      <aside className="hidden w-60 shrink-0 flex-col rounded-2xl border border-border/80 bg-surface/90 shadow-[var(--shadow-island)] overflow-hidden md:flex">
+        <div className="flex items-center gap-2.5 border-b border-border/50 px-4 py-3">
           <BrandMark />
-          <span className="text-subheading font-semibold text-ink">运营控制台</span>
+          <span className="text-body-sm font-semibold tracking-tight text-ink">运营控制台</span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <SidebarNav onNavigate={() => undefined} />
         </div>
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-border bg-background px-4 py-2 md:hidden">
+      <div className="flex min-w-0 flex-1 flex-col rounded-2xl border border-border/80 bg-surface shadow-[var(--shadow-island)] overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border/50 bg-surface px-4 py-2.5 md:hidden">
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-1.5">
-                <Menu className="size-4" aria-hidden />
-                菜单
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="gap-0 bg-panel p-0">
-              <SheetHeader className="border-b border-border px-4 py-3">
+            <SheetTrigger
+              render={
+                <Button variant="ghost" size="sm" className="gap-1.5 rounded-lg">
+                  <Menu className="size-4" aria-hidden />
+                  菜单
+                </Button>
+              }
+            />
+            <SheetContent
+              side="left"
+              className="w-68 gap-0 bg-surface p-0 rounded-r-2xl border-r border-border/80 shadow-[var(--shadow-elevated)]"
+            >
+              <SheetHeader className="border-b border-border/50 px-4 py-3">
                 <div className="flex items-center gap-2">
                   <BrandMark />
-                  <SheetTitle className="text-body-sm font-semibold text-ink">运营控制台</SheetTitle>
+                  <SheetTitle className="text-body-sm font-semibold text-ink">
+                    运营控制台
+                  </SheetTitle>
                 </div>
               </SheetHeader>
-              <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex-1 overflow-y-auto p-2.5">
                 <SidebarNav onNavigate={() => setSheetOpen(false)} />
               </div>
             </SheetContent>
           </Sheet>
-          <span className="text-body-sm text-muted-foreground">运营控制台</span>
+          <span className="text-body-sm font-medium text-muted-foreground">运营控制台</span>
         </div>
         <section className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-7">
             <Outlet />
           </div>
         </section>
@@ -131,10 +116,10 @@ function AdminLayout() {
 
 function SidebarNav({ onNavigate }: { onNavigate: () => void }) {
   return (
-    <nav aria-label="运营控制台导航" className="flex flex-col gap-5 px-3">
+    <nav aria-label="运营控制台导航" className="flex flex-col gap-4 px-1">
       {NAV_GROUPS.map((group) => (
         <div key={group.title}>
-          <p className="mb-1 px-2 text-caption font-semibold tracking-wide text-muted-foreground uppercase">
+          <p className="mb-1.5 px-2.5 font-mono text-metadata font-semibold tracking-wider text-muted-foreground uppercase">
             {group.title}
           </p>
           <div className="flex flex-col gap-0.5">
@@ -150,7 +135,9 @@ function SidebarNav({ onNavigate }: { onNavigate: () => void }) {
 
 function NavLinkEntry({ entry, onNavigate }: { entry: NavEntry; onNavigate: () => void }) {
   const location = useLocation();
-  const active = entry.exact ? location.pathname === entry.to : location.pathname.startsWith(entry.to);
+  const active = entry.exact
+    ? location.pathname === entry.to
+    : location.pathname.startsWith(entry.to);
   const Icon = entry.icon;
 
   return (
@@ -158,13 +145,21 @@ function NavLinkEntry({ entry, onNavigate }: { entry: NavEntry; onNavigate: () =
       to={entry.to}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-body-sm text-body transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        "hover:bg-panel/60 hover:text-ink",
-        active && "bg-panel font-medium text-ink hover:bg-panel hover:text-ink",
+        "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-caption text-body transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-[0.99]",
+        "hover:bg-panel/70 hover:text-ink",
+        active
+          ? "bg-panel font-semibold text-ink shadow-xs ring-1 ring-border/60 hover:bg-panel hover:text-ink"
+          : "text-muted-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden />
-      {entry.label}
+      <Icon
+        className={cn(
+          "size-4 shrink-0 transition-colors",
+          active ? "text-accent-ink" : "text-muted-foreground group-hover:text-ink",
+        )}
+        aria-hidden
+      />
+      <span>{entry.label}</span>
     </Link>
   );
 }

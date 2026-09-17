@@ -2,14 +2,16 @@
 __pycache__/
 *.py[cod]
 .venv/
+*.egg-info/
 dist/
 build/
-*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .pyright/
 .coverage
+coverage.xml
+htmlcov/
 
 # uv
 .uv/
@@ -17,7 +19,6 @@ build/
 # Node / pnpm
 node_modules/
 *.tsbuildinfo
-.turbo/
 apps/web/dist/
 .tanstack/
 
@@ -26,15 +27,22 @@ apps/web/dist/
 .env.*
 !.env.example
 
-# Local dev artifacts
-*.log
-tsc-output.txt
-.scratch-shots/
-.playwright-mcp/
-.verify/
+# Local runtime data (object storage root)
+objects/
 
-# Local dev data
-apps/api/dev.db
+# Local docs archive (not published to GitHub)
+_archive/
+
+# Local tooling artifacts
+.verify/
+.playwright-mcp/
+.scratch-shots/
+*.log
+
+# Coverage / quality gate artifacts
+coverage.xml
+coverage-partial.xml
+diff-cover.json
 
 # Editors / OS
 .idea/

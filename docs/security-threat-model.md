@@ -25,7 +25,7 @@ PG/Redis/Qdrant 中间件。**v1 不含可识别患者数据（ADR 0008）**；�
 | T3 | 越权访问运营面 | `require_operator` 依赖 + OPERATOR_EMAILS 白名单；读路径零写（ADR 0080） | 邮箱名单即权限边界，需流程保护 |
 | T4 | 提示注入外泄系统约束 | 受控有界流水线（非开环 ReAct）；生成证据有界（ADR 0040） | 对抗性文档内容进入证据的间接注入，靠安全评估层兜底 |
 | T5 | 医疗危害输出 | PROHIBITED 检索前短路（ADR 0043）；固定免责声明（ADR 0042）；空证据拒绝生成 | 专家审核不可自动化（spec 红线） |
-| T6 | 日志泄露敏感内容 | `safe_bind` 字段白/黑名单强制 | 自定义字段新增时需评审 SAFE_FIELDS |
+| T6 | 日志泄露敏感内容 | `SAFE_FIELDS` 白名单在输出汇聚点 `_format` 强制过滤（绕过绑定层也拦得住） | 自定义字段新增时需评审 SAFE_FIELDS |
 | T7 | 密钥入库 | gitleaks CI 扫描；`.env` 入 .gitignore；无默认弱密钥（Langfuse 空值即拒绝启动） | 开发机泄露不在扫描范围 |
 | T8 | 供应链投毒 | 镜像钉 tag；Renovate 升级评审；pip-audit/pnpm audit 门禁 | 未做镜像 digest 钉版（升级时补） |
 | T9 | 毒消息阻塞摄取管道 | outbox attempts 计数 + 上限跳过（ADR 0080） | 死信仍需操作员手工处理 |

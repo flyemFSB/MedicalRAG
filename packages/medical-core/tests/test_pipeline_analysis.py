@@ -2,6 +2,7 @@
 
 from medicalrag_core.chat.model import Analysis, ChatRequest, MemoryContext, Message
 from medicalrag_core.chat.pipeline import ChatPipeline
+from medicalrag_core.chat.stream import DoneEvent
 from medicalrag_core.evidence.evidence import Candidate
 from medicalrag_core.evidence.retrieval_policy import RetrievalPolicy
 from medicalrag_core.intent.node import IntentKind, IntentLevel, IntentNode
@@ -92,9 +93,9 @@ class FakeGenerator:
     def __init__(self) -> None:
         self.calls: list = []
 
-    async def generate(self, context):
+    async def stream(self, context):
         self.calls.append(context)
-        return "回答"
+        yield "回答"
 
 
 class FakeRuns:
@@ -123,24 +124,32 @@ def _pipeline(*, context_cap: int = 2, reranker=None):
     return pipeline, generator
 
 
+async def _run(pipeline: ChatPipeline, request: ChatRequest):
+    """测试专用非流式收敛：从 run_stream 中提取 DoneEvent 的结果。"""
+    async for event in pipeline.run_stream(request):
+        if isinstance(event, DoneEvent):
+            return event.result
+    raise AssertionError("聊天流未产出 DoneEvent 即结束")
+
+
 async def test_analysis_depth_raises_evidence_cap():
     pipeline, _ = _pipeline(context_cap=2)
-    shallow = await pipeline.run(_request())
+    shallow = await _run(pipeline, _request())
     assert len(shallow.evidence) == 2  # 默认封顶
-    deep = await pipeline.run(_request(analysis_depth=True))
+    deep = await _run(pipeline, _request(analysis_depth=True))
     assert len(deep.evidence) == 3  # 深度分析：封顶翻倍后全部保留
 
 
 async def test_analysis_depth_marks_generation_context():
     pipeline, generator = _pipeline(context_cap=10)
-    await pipeline.run(_request(analysis_depth=True))
+    await _run(pipeline, _request(analysis_depth=True))
     assert generator.calls[0].analysis is True
 
 
 async def test_reranker_is_invoked_and_score_used_for_ordering():
     reranker = FakeReranker()
     pipeline, _ = _pipeline(context_cap=10, reranker=reranker)
-    result = await pipeline.run(_request())
+    result = await _run(pipeline, _request())
     assert len(reranker.calls) == 1
     assert reranker.calls[0][0] == "高血压注意事项"
     # 排序分取 reranker 单调分数（0.9*2=1.8）—— 最高者排第一

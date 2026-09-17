@@ -14,14 +14,12 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AdminAuditRouteImport } from './routes/admin/audit'
 import { Route as AdminDashboardRouteImport } from './routes/admin/dashboard'
 import { Route as AdminFeedbackRouteImport } from './routes/admin/feedback'
 import { Route as AdminIngestionRouteImport } from './routes/admin/ingestion'
 import { Route as AdminIntentsRouteImport } from './routes/admin/intents'
 import { Route as AdminKnowledgeRouteImport } from './routes/admin/knowledge'
 import { Route as AdminMappingsRouteImport } from './routes/admin/mappings'
-import { Route as AdminSampleQuestionsRouteImport } from './routes/admin/sample-questions'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminTracesRouteImport } from './routes/admin/traces'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
@@ -57,11 +55,6 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminAuditRoute = AdminAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -90,11 +83,6 @@ const AdminKnowledgeRoute = AdminKnowledgeRouteImport.update({
 const AdminMappingsRoute = AdminMappingsRouteImport.update({
   id: '/mappings',
   path: '/mappings',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminSampleQuestionsRoute = AdminSampleQuestionsRouteImport.update({
-  id: '/sample-questions',
-  path: '/sample-questions',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
@@ -149,14 +137,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
-  '/admin/audit': typeof AdminAuditRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/ingestion': typeof AdminIngestionRoute
   '/admin/intents': typeof AdminIntentsRoute
   '/admin/knowledge': typeof AdminKnowledgeRouteWithChildren
   '/admin/mappings': typeof AdminMappingsRoute
-  '/admin/sample-questions': typeof AdminSampleQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/traces': typeof AdminTracesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
@@ -172,13 +158,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
-  '/admin/audit': typeof AdminAuditRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/ingestion': typeof AdminIngestionRoute
   '/admin/intents': typeof AdminIntentsRoute
   '/admin/mappings': typeof AdminMappingsRoute
-  '/admin/sample-questions': typeof AdminSampleQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
@@ -194,14 +178,12 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
-  '/admin/audit': typeof AdminAuditRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/ingestion': typeof AdminIngestionRoute
   '/admin/intents': typeof AdminIntentsRoute
   '/admin/knowledge': typeof AdminKnowledgeRouteWithChildren
   '/admin/mappings': typeof AdminMappingsRoute
-  '/admin/sample-questions': typeof AdminSampleQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/traces': typeof AdminTracesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
@@ -220,14 +202,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/status'
-    | '/admin/audit'
     | '/admin/dashboard'
     | '/admin/feedback'
     | '/admin/ingestion'
     | '/admin/intents'
     | '/admin/knowledge'
     | '/admin/mappings'
-    | '/admin/sample-questions'
     | '/admin/settings'
     | '/admin/traces'
     | '/admin/users'
@@ -243,13 +223,11 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/status'
-    | '/admin/audit'
     | '/admin/dashboard'
     | '/admin/feedback'
     | '/admin/ingestion'
     | '/admin/intents'
     | '/admin/mappings'
-    | '/admin/sample-questions'
     | '/admin/settings'
     | '/admin/users'
     | '/admin'
@@ -264,14 +242,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/status'
-    | '/admin/audit'
     | '/admin/dashboard'
     | '/admin/feedback'
     | '/admin/ingestion'
     | '/admin/intents'
     | '/admin/knowledge'
     | '/admin/mappings'
-    | '/admin/sample-questions'
     | '/admin/settings'
     | '/admin/traces'
     | '/admin/users'
@@ -328,13 +304,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/audit': {
-      id: '/admin/audit'
-      path: '/audit'
-      fullPath: '/admin/audit'
-      preLoaderRoute: typeof AdminAuditRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/dashboard': {
       id: '/admin/dashboard'
       path: '/dashboard'
@@ -375,13 +344,6 @@ declare module '@tanstack/react-router' {
       path: '/mappings'
       fullPath: '/admin/mappings'
       preLoaderRoute: typeof AdminMappingsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/sample-questions': {
-      id: '/admin/sample-questions'
-      path: '/sample-questions'
-      fullPath: '/admin/sample-questions'
-      preLoaderRoute: typeof AdminSampleQuestionsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/settings': {
@@ -492,14 +454,12 @@ const AdminTracesRouteWithChildren = AdminTracesRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
-  AdminAuditRoute: typeof AdminAuditRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFeedbackRoute: typeof AdminFeedbackRoute
   AdminIngestionRoute: typeof AdminIngestionRoute
   AdminIntentsRoute: typeof AdminIntentsRoute
   AdminKnowledgeRoute: typeof AdminKnowledgeRouteWithChildren
   AdminMappingsRoute: typeof AdminMappingsRoute
-  AdminSampleQuestionsRoute: typeof AdminSampleQuestionsRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminTracesRoute: typeof AdminTracesRouteWithChildren
   AdminUsersRoute: typeof AdminUsersRoute
@@ -507,14 +467,12 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminAuditRoute: AdminAuditRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminFeedbackRoute: AdminFeedbackRoute,
   AdminIngestionRoute: AdminIngestionRoute,
   AdminIntentsRoute: AdminIntentsRoute,
   AdminKnowledgeRoute: AdminKnowledgeRouteWithChildren,
   AdminMappingsRoute: AdminMappingsRoute,
-  AdminSampleQuestionsRoute: AdminSampleQuestionsRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminTracesRoute: AdminTracesRouteWithChildren,
   AdminUsersRoute: AdminUsersRoute,

@@ -15,8 +15,9 @@ worker 配置绕过 fail-fast 校验。另发现两处被类型检查暴露的�
 ## 决策
 
 1. **CI 强制门禁**（`.github/workflows/ci.yml`）：提交级 = ruff format/check +
-   pyright(basic) + pytest(覆盖率 ≥80%，基线 82%)；PR 级 = OpenAPI 契约导出与
-   contract-check + turbo lint/typecheck/test:unit/build + gitleaks/pip-audit/
+   pyright(basic) + pytest（总量覆盖率地板 75%）；PR 级 = 变更行覆盖率门禁（ADR 0088）+
+   OpenAPI 契约导出与
+   contract-check + pnpm web gate + gitleaks/pip-audit/
    pnpm audit + 四镜像构建。集成/E2E/eval-answer 属合并级，本地或发布流水线执行。
 2. **Python 类型检查**：pyright basic 起步（根 `[tool.pyright]`），逐步收紧；
    env 注入型 Settings 的 `reportCallIssue` 允许定点 ignore。
@@ -26,7 +27,7 @@ worker 配置绕过 fail-fast 校验。另发现两处被类型检查暴露的�
 4. **登录防爆破**：按来源 IP 固定窗口限流（`auth_rate_limit` 默认 10/min）。
 5. **可观测落地**：ASGI `request_id` 中间件（接受上游 X-Request-ID，绑定 loguru
    contextvars 并回写响应头）；`/metrics` 输出 Prometheus 文本格式
-   （counter/gauge/summary quantiles），`/api/metrics` JSON 仅作人工排查面。
+   （counter/histogram，分位数由 Prometheus 侧 `histogram_quantile` 聚合）。
 6. **流式 payload 单一出口**：领域事件自带 `sse_name`/`to_payload`
    （Evidence/SafetyAssessment/Analysis 同样），SSE 端点与 agent graph 共用，
    新增字段不漏消费方。
@@ -39,7 +40,7 @@ worker 配置绕过 fail-fast 校验。另发现两处被类型检查暴露的�
    fail-open 语义不变，ADR 0059/0076）。
 9. **集成测试层**：compose `test` profile 提供 PG/Redis/Qdrant（宿主端口错开、
    tmpfs）；pytest `integration` 标记 + `MEDICALRAG_TEST_DATABASE_URL` 未配置即跳过。
-10. **前端质量层**：web 补 vitest（test:unit 进 turbo 门禁）与 Playwright 冒烟
+10. **前端质量层**：web 补 vitest（test:unit 进 web 门禁）与 Playwright 冒烟
     （认证流/健康面，针对 compose 全栈）；移除 npm 源 `xlsx`（0.18.5 已知 CVE 且
     上游停更于 npm），XLSX 内嵌预览降级为不支持（ADR 0068 范围修订记录于此）。
 11. **流程配套**：pre-commit（ruff 双钩子+基础卫生）、Renovate（含锁文件维护）、
@@ -55,6 +56,6 @@ worker 配置绕过 fail-fast 校验。另发现两处被类型检查暴露的�
 
 ## 参考
 
-- docs/research/devops-quality-security-and-observability.md
+- `_archive/docs/research/devops-quality-security-and-observability.md`（本地归档）
 - docs/security-threat-model.md
-- ADR 0013/0049/0053/0059/0061/0063/0071/0072/0073/0075/0076
+- ADR 0013/0049/0053/0071/0073/0075/0076/0082

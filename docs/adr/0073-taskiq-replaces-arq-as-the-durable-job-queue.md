@@ -1,8 +1,12 @@
 ---
-status: accepted
+status: amended
+related:
+  - 0086-rabbitmq-replaces-redis-streams-as-taskiq-transport
 ---
 
 # TaskIQ replaces arq as the durable job queue
+
+> **Amendment (ADR 0086)**: the TaskIQ transport swapped from `taskiq-redis` (RedisStreamBroker/ListQueueBroker) to `taskiq-aio-pika` (RabbitMQ, durable quorum queue + dead lettering). TaskIQ as the job framework, the middlewares, the outbox relay, and every responsibility below are unchanged.
 
 arq 0.28 is maintenance-only and declares a redis-py upper bound of `<6`, which conflicts with the pinned redis-py 8.1 baseline required by the application-owned Redis session and auth adapters (version-baseline §1, gate 3). The Worker therefore uses TaskIQ with `taskiq-redis` (`ListQueueBroker`), which supports redis-py 8.x and installs cleanly on Python 3.14. This preserves [ADR 0063](../../adr/0063-arq-replaces-rocketmq-as-the-durable-job-queue.md) responsibilities — durable asynchronous application workflows, worker-side retries, stable job ids, the PostgreSQL transactional outbox, and PostgreSQL-backed failure/replay — with only the broker implementation changed.
 

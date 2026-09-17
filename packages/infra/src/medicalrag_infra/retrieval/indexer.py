@@ -1,14 +1,14 @@
-"""Qdrant 向量索引适配器（摄取管线 indexing 阶段：upsert 文档切片的向量与元数据）。
+"""Qdrant 向量索引适配器（摄取管线 indexing 阶段：写入文档分块的向量与元数据）。
 
 dense_vec 稠密向量由外部 Embedding Provider 计算；
-sparse_vec 稀疏向量由 fastembed 的 SparseTextEmbedding（采用静态 Qdrant/bm25 模型）预先计算并存入索引——
-此举为官方推荐最佳实践：无语料库状态依赖，确保索引与检索阶段的对称一致性。
-切片正文与元数据写入 payload 供检索阶段引用和溯源校验。
+sparse_vec 稀疏向量由 fastembed 的静态 Qdrant/bm25 模型预先计算并存入索引（经 `sparse.bm25_text`
+中文 bigram 预处理，与查询端共用同一函数保证对称一致性）。
 """
 
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Sequence
 from typing import cast
 
@@ -18,11 +18,15 @@ from qdrant_client import QdrantClient, models
 from medicalrag_core.chunking.chunking import Chunk, embedding_text
 from medicalrag_core.retrieval.ports import EmbeddingProvider
 
-from .schema import DEFAULT_COLLECTION, DEFAULT_SPARSE_MODEL
+from .schema import DEFAULT_COLLECTION
+from .sparse import bm25_text, build_sparse_model
+
+# 外部嵌入 Provider 单次请求的分块数上限：避免大文档数百个分块单次请求超出请求体或超时上限
+_EMBED_BATCH = 64
 
 
 class QdrantIndexer:
-    """负责将文档 Chunk 计算向量嵌入并 upsert 写入 Qdrant 集合。
+    """负责将文档分块计算向量嵌入并写入 Qdrant 集合。
 
     chunk_id 采用 {document_id}:{index} 确定性命名规则（供检索阶段去重与溯源引用）；
     dense_vec 由 Embedding Provider 填充；sparse_vec 由 fastembed 静态 BM25 模型计算；
@@ -40,10 +44,10 @@ class QdrantIndexer:
         self._client = client
         self._embeddings = embeddings
         self._collection = collection
-        self._sparse_model = sparse_model or SparseTextEmbedding(DEFAULT_SPARSE_MODEL)
+        self._sparse_model = sparse_model or build_sparse_model()
 
     def _sparse_vec(self, text: str) -> models.SparseVector:
-        emb = next(iter(self._sparse_model.embed([text])))
+        emb = next(iter(self._sparse_model.embed([bm25_text(text)])))
         return models.SparseVector(
             indices=list(emb.indices),
             values=list(emb.values),
@@ -67,14 +71,16 @@ class QdrantIndexer:
             else [embedding_text(chunk) for chunk in chunks]
         )
         if dense_vectors is None:
-            vectors = await self._embeddings.embed(texts)
+            vectors: list[Sequence[float]] = []
+            for start in range(0, len(texts), _EMBED_BATCH):
+                vectors.extend(await self._embeddings.embed(texts[start : start + _EMBED_BATCH]))
         else:
             vectors = list(dense_vectors)
         sparse_vecs = await asyncio.to_thread(lambda: [self._sparse_vec(text) for text in texts])
 
         points = [
             models.PointStruct(
-                id=f"{document_id}:{chunk.index}",
+                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{chunk.index}")),
                 # VectorStruct 结构由集合模式保证
                 vector=cast(
                     "models.VectorStruct",
@@ -95,13 +101,17 @@ class QdrantIndexer:
                     "is_eligible": False,
                 },
             )
-            for chunk, text, vector, sparse_vec in zip(chunks, texts, vectors, sparse_vecs)
+            for chunk, text, vector, sparse_vec in zip(
+                chunks, texts, vectors, sparse_vecs, strict=True
+            )
         ]
 
         await asyncio.to_thread(
             self._client.upsert,
             collection_name=self._collection,
             points=points,
+            # wait=True：indexing 阶段后的 validating 门禁依赖 count(exact=True) 读到已落盘的点
+            wait=True,
         )
 
     async def count_points(self, document_id: str) -> int:
@@ -142,7 +152,7 @@ class QdrantIndexer:
         """读取指定集合的稠密向量维度；若集合不存在或不可达则返回 None。"""
         try:
             info = await asyncio.to_thread(self._client.get_collection, self._collection)
-        except Exception:  # noqa: BLE001 —— 缺失或网络异常统一按 Schema 未就绪处理
+        except Exception:
             return None
         vectors = info.config.params.vectors
         dense = vectors.get("dense_vec") if isinstance(vectors, dict) else None

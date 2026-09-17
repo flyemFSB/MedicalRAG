@@ -12,13 +12,14 @@ describe("relativeTime", () => {
   it("刚刚 / 分钟前", () => {
     const now = Date.now();
     expect(relativeTime(new Date(now - 10_000).toISOString())).toBe("刚刚");
-    expect(relativeTime(new Date(now - 5 * 60_000).toISOString())).toBe("5 分钟前");
+    expect(relativeTime(new Date(now - 5 * 60_000).toISOString())).toBe("5分钟前");
   });
 
   it("小时前 / 天前", () => {
     const now = Date.now();
-    expect(relativeTime(new Date(now - 3 * 3_600_000).toISOString())).toBe("3 小时前");
-    expect(relativeTime(new Date(now - 2 * 86_400_000).toISOString())).toBe("2 天前");
+    expect(relativeTime(new Date(now - 3 * 3_600_000).toISOString())).toBe("3小时前");
+    // Intl zh-CN numeric:auto 将「2 天前」规范化为「前天」
+    expect(relativeTime(new Date(now - 2 * 86_400_000).toISOString())).toBe("前天");
   });
 });
 

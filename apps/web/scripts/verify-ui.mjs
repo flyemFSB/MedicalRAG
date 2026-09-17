@@ -4,7 +4,7 @@
 import { chromium } from "playwright-core";
 import { fileURLToPath } from "node:url";
 
-const BASE = process.argv[2] ?? "http://localhost:5174";
+const BASE = process.argv[2] ?? "http://127.0.0.1:5173";
 const OUT = fileURLToPath(new URL("../.verify", import.meta.url));
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -47,7 +47,7 @@ try {
     const body = await resp.json();
     return body.id;
   });
-  const uuid = () => `${crypto.randomUUID?.() ?? "019fcb4f-831b-740d-ba5c-fc81cce2c3f9"}`;
+  const uuid = () => crypto.randomUUID();
 
   // 运营控制台各模块
   const routes = [
@@ -64,7 +64,6 @@ try {
     ["feedback", "/admin/feedback"],
     ["users", "/admin/users"],
     ["audit", "/admin/audit"],
-    ["sample-questions", "/admin/sample-questions"],
   ];
   for (const [name, path] of routes) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });

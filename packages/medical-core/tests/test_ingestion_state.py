@@ -7,6 +7,7 @@ from medicalrag_core.ingestion.state_machine import (
     InvalidIngestionTransition,
     advance,
     is_terminal,
+    precedes,
 )
 
 
@@ -42,3 +43,11 @@ def test_failed_is_terminal_and_cannot_advance():
 def test_non_terminal_stages_can_advance():
     assert not is_terminal(IngestionRunState.ACCEPTED)
     assert not is_terminal(IngestionRunState.VALIDATING)
+
+
+def test_precedes_orders_stages_and_rejects_backwards():
+    """at-least-once 重复投递：滞后阶段的任务必须能被识别为幂等成功，而非当作阶段错位。"""
+    assert precedes(IngestionRunState.ACCEPTED, IngestionRunState.EXTRACTING)
+    assert not precedes(IngestionRunState.EXTRACTING, IngestionRunState.ACCEPTED)
+    # 同一阶段既非前趋也非后继（重复投递同一阶段不应误判为滞后）
+    assert not precedes(IngestionRunState.CHUNKING, IngestionRunState.CHUNKING)

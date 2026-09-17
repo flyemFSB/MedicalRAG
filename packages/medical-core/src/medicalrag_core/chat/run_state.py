@@ -1,8 +1,8 @@
 """聊天 Run 状态机（架构文档 Chat State Machine）。
 
-对单次 Agent Run 建模为单向递进、具备明确终止态的状态机契约。每个终止态均会持久化：
-一条用户输入消息、一条助手响应或错误事件，以及对应的业务 Run 完成记录。
-相较于架构状态图，此处补充了 SAFETY 状态：表示 PROHIBITED（个体化临床决策）请求在检索前触发安全短路。
+对单次 Agent Run 建模为单向递进、具备明确终止态的状态机契约。
+FAILED / CANCELLED 为终止态，由编排器在异常路径直接落库（不经 transition 校验：
+异常路径以可靠落库优先，编排器保证绝不把已完成的 Run 改写为失败态）。
 """
 
 from __future__ import annotations
@@ -42,20 +42,18 @@ class ChatRunEvent(enum.StrEnum):
     MODEL_COMPLETED = "model_completed"
     PROVIDER_FAILURE = "provider_failure"
     COMPLETE = "complete"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class InvalidChatRunTransition(ValueError):
     """当事件在 Run 的当前状态下不合法时抛出该异常。"""
 
 
-TERMINAL_STATES = frozenset({ChatRunState.COMPLETED, ChatRunState.FAILED, ChatRunState.CANCELLED})
-
 _TRANSITIONS: dict[tuple[ChatRunState, ChatRunEvent], ChatRunState] = {
     # 基础前置阶段：ACCEPTED -> MEMORY_LOADED -> ANALYZED
     (ChatRunState.ACCEPTED, ChatRunEvent.MEMORY_LOADED): ChatRunState.MEMORY_LOADED,
     (ChatRunState.MEMORY_LOADED, ChatRunEvent.ANALYZED): ChatRunState.ANALYZED,
+    # 确定性违规前置拦截：不经过外部模型分类，直接从记忆加载后短路（ADR 0043）
+    (ChatRunState.MEMORY_LOADED, ChatRunEvent.ROUTE_SAFETY): ChatRunState.SAFETY,
     # 意图分析完成后的路由分发分支
     (ChatRunState.ANALYZED, ChatRunEvent.ROUTE_GUIDANCE): ChatRunState.GUIDANCE,
     (ChatRunState.ANALYZED, ChatRunEvent.ROUTE_SYSTEM_ONLY): ChatRunState.SYSTEM_ONLY,
@@ -73,10 +71,6 @@ _TRANSITIONS: dict[tuple[ChatRunState, ChatRunEvent], ChatRunState] = {
     (ChatRunState.SAFETY, ChatRunEvent.COMPLETE): ChatRunState.COMPLETED,
     (ChatRunState.EMPTY, ChatRunEvent.COMPLETE): ChatRunState.COMPLETED,
     (ChatRunState.FALLBACK, ChatRunEvent.COMPLETE): ChatRunState.COMPLETED,
-    # 异常与取消终止分支
-    (ChatRunState.ACCEPTED, ChatRunEvent.FAILED): ChatRunState.FAILED,
-    (ChatRunState.MEMORY_LOADED, ChatRunEvent.CANCELLED): ChatRunState.CANCELLED,
-    (ChatRunState.GENERATING, ChatRunEvent.CANCELLED): ChatRunState.CANCELLED,
 }
 
 
@@ -89,8 +83,3 @@ def transition(current: ChatRunState, event: ChatRunEvent) -> ChatRunState:
         return _TRANSITIONS[(current, event)]
     except KeyError:
         raise InvalidChatRunTransition(current, event) from None
-
-
-def is_terminal(state: ChatRunState) -> bool:
-    """判定给定状态 `state` 是否为 Run 终止态（COMPLETED / FAILED / CANCELLED）。"""
-    return state in TERMINAL_STATES

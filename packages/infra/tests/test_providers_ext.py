@@ -60,38 +60,17 @@ async def test_reranker_provider_failure_raises():
         await reranker.rerank("高血压", (_candidate(0),))
 
 
-async def test_mineru_submit_url_returns_task_id():
+async def test_mineru_request_file_upload_returns_batch_and_url():
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v4/extract/task"
-        return httpx.Response(200, json={"task_id": "task-123"})
+        assert request.url.path == "/api/v4/file-urls/batch"
+        return httpx.Response(
+            200, json={"batch_id": "batch-1", "file_urls": ["https://cdn.example.com/put"]}
+        )
 
     client = MinerUClient(
         MinerUConfig(base_url="https://mineru.example.com", token="secret"),
         transport=httpx.MockTransport(handler),
     )
-    assert await client.submit_url("https://cdn.example.com/doc.pdf") == "task-123"
-
-
-async def test_mineru_poll_task_status():
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"task_status": "succeeded", "batch_id": "batch-9"})
-
-    client = MinerUClient(
-        MinerUConfig(base_url="https://mineru.example.com"),
-        transport=httpx.MockTransport(handler),
-    )
-    task = await client.task_status("task-123")
-    assert task.status == "succeeded"
-    assert task.batch_id == "batch-9"
-
-
-async def test_mineru_failure_raises_provider_error():
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500)
-
-    client = MinerUClient(
-        MinerUConfig(base_url="https://mineru.example.com"),
-        transport=httpx.MockTransport(handler),
-    )
-    with pytest.raises(ProviderUnavailableError):
-        await client.submit_url("https://cdn.example.com/doc.pdf")
+    batch_id, upload_url = await client.request_file_upload("doc.pdf")
+    assert batch_id == "batch-1"
+    assert upload_url == "https://cdn.example.com/put"

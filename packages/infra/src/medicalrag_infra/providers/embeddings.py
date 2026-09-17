@@ -5,24 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from typing import cast
 
-import httpx2 as httpx  # OpenAI SDK 3.x 起统一使用 httpx2；客户端对象严禁跨包边界传递
 import openai
+from redis.exceptions import RedisError
 
 from medicalrag_core.chat.ports import ProviderUnavailableError
 from medicalrag_core.retrieval.ports import EmbeddingProvider
 
-from .llm import LLMProviderConfig, _client
+from .llm import _OpenAICompatClient
 
 
-class OpenAICompatEmbeddingProvider:
+class OpenAICompatEmbeddingProvider(_OpenAICompatClient):
     """基于 OpenAI SDK /embeddings 接口的向量嵌入适配器。"""
-
-    def __init__(
-        self, config: LLMProviderConfig, *, transport: httpx.AsyncBaseTransport | None = None
-    ) -> None:
-        self._config = config
-        self._client = _client(config, transport)
 
     async def embed(self, texts: Sequence[str]) -> Sequence[Sequence[float]]:
         try:
@@ -51,12 +46,11 @@ class CachedEmbeddingProvider:
         redis_client,  # redis.asyncio.Redis 实例（采用鸭子类型解耦构造签名）
         *,
         namespace: str = "default",
-        ttl_s: int = 86_400,
     ) -> None:
         self._inner = inner
         self._redis = redis_client
         self._namespace = namespace
-        self._ttl_s = ttl_s
+        self._ttl_s = 86_400
 
     def _key(self, text: str) -> str:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -67,7 +61,9 @@ class CachedEmbeddingProvider:
             return []
         try:
             return await self._embed_cached(texts)
-        except Exception:  # noqa: BLE001 —— Redis 故障时执行 fail-open 策略，直接回源底层 Provider
+        except (RedisError, ValueError):
+            # Redis 故障/缓存值损坏 fail-open：缓存是加速优化，不阻断嵌入链路
+            # （历史格式或半写入的脏缓存值 json.loads 抛 JSONDecodeError，属 ValueError 子类）
             return [list(vector) for vector in await self._inner.embed(texts)]
 
     async def _embed_cached(self, texts: Sequence[str]) -> list[list[float]]:
@@ -83,11 +79,8 @@ class CachedEmbeddingProvider:
             if len(vectors) != len(misses):
                 raise ProviderUnavailableError("embedding_count_mismatch")
             pipe = self._redis.pipeline()
-            for index, vector in zip(misses, vectors):
+            for index, vector in zip(misses, vectors, strict=True):
                 results[index] = vector
                 pipe.set(keys[index], json.dumps(vector), ex=self._ttl_s)
             await pipe.execute()
-        # 严格保障位置完整性：若任何位置仍为 None 说明回填异常，宁可抛错不可产生向量位置错位
-        if any(result is None for result in results):
-            raise ProviderUnavailableError("embedding_cache_inconsistent")
-        return [result for result in results if result is not None]
+        return [cast("list[float]", result) for result in results]

@@ -1,93 +1,91 @@
-/* MedicalRAG — Vercel 单色设计语言（Tailwind v4 + shadcn CSS 变量体系）。
-   规范见 DESIGN.md：单色画布（白底黑字灰阶）、Vercel 蓝 #0070f3 唯一功能色、
-   Geist Sans/Mono、连续画布（去岛/去光晕/去浮影）、发丝边框、默认静止。
-   医疗安全边界 = 黑色对比带（--vbg-surface-contrast）。 */
+/* MedicalRAG — Many Islands Clinical（DESIGN.md）。
+   Tailwind v4 + shadcn CSS 变量：
+   JetBrains Many Islands 模块化工作岛 + Apple HIG 层次体系。
+   Canvas 桌面底板承托悬浮工作岛，墨色主按钮、唯一功能色 #2f6fed、
+   Geist Sans/Mono + 系统衬线 Display、发丝线、自然视隙。
+   安全边界 = 黑对比带（--safety-band / --color-medical-strong）。 */
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
 
-/* 仅 hover 能力设备：触屏不隐藏行操作（见 data-table.tsx）。 */
-@custom-variant hoverable (&:is(@media (hover: hover)));
+/* 仅 hover 能力设备：触屏不隐藏行操作（见 data-table.tsx）。
+   block 形式（@slot）是官方文档写法；简写 `(&:is(@media ...))` 会生成非法选择器。 */
+@custom-variant hoverable {
+  @media (hover: hover) {
+    @slot;
+  }
+}
 
 :root {
-  /* --- shadcn 变量（映射到下方品牌/语义 token） --- */
-  --background: #ffffff;                            /* 主画布（唯一连续表面） */
-  --foreground: #0a0a0a;                            /* 主文本 ≈18:1 */
+  /* --- shadcn 语义（Many Islands: 底板与岛屿） --- */
+  --background: #f2f1ec;
+  --foreground: #1a1a18;
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #1a1a18;
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #0a0a0a;                               /* 黑主按钮（Vercel 句法） */
-  --primary-foreground: #ffffff;
-  --secondary: #fafafa;                             /* 次表面（白钮/次级面板） */
-  --secondary-foreground: #0a0a0a;
-  --muted: #fafafa;                                 /* 面板/次级表面 */
-  --muted-foreground: #555555;                      /* 次要文本 ≈7.6:1 */
-  --accent: #f2f2f2;                                /* hover wash（中性灰） */
-  --accent-foreground: #0a0a0a;
-  --destructive: oklch(0.55 0.2 25);
+  --popover-foreground: #1a1a18;
+  --primary: #1a1a18;
+  --primary-foreground: #faf8f5;
+  --secondary: #eae8e1;
+  --secondary-foreground: #1a1a18;
+  --muted: #eae8e1;
+  --muted-foreground: #6b6860;
+  --accent: #f0ede6;
+  --accent-foreground: #1a1a18;
+  --destructive: #c23b22;
   --destructive-foreground: #ffffff;
-  --border: oklch(0 0 0 / 0.08);                    /* 发丝边框（subtle） */
-  --input: oklch(0 0 0 / 0.14);                     /* 输入框边框（default） */
-  --ring: #0070f3;                                  /* focus ring（Vercel 蓝） */
-  --radius: 0.375rem;                               /* 6px 基准；圆角克制 ≤8px */
+  --border: #e2ded4;
+  --input: #d4cfc4;
+  --ring: #2f6fed;
+  --radius: 0.625rem;
 
-  /* --- 品牌中性色（连续画布灰阶；chroma 0 不偏暖冷） --- */
-  --color-canvas: #ffffff;
+  /* --- 品牌中性（Many Islands 空间阶梯） --- */
+  --color-canvas: #f2f1ec;
   --color-surface: #ffffff;
-  --color-panel: #fafafa;
-  --color-panel-strong: #f2f2f2;
-  --color-ink: #0a0a0a;
-  --color-body: #2e2e2e;                            /* 正文 ≈12:1 */
-  --color-faint: #767676;                           /* disabled/placeholder ≈4.8:1 */
+  --color-panel: #eae8e1;
+  --color-panel-strong: #dfdcce;
+  --color-ink: #1a1a18;
+  --color-body: #3d3b36;
+  --color-faint: #6b6860;
 
-  /* --- 品牌 accent（Vercel 蓝 #0070f3；唯一功能色）。
-     注意：--color-accent 是 shadcn 的 hover wash（中性灰），
-     品牌蓝一律走 -accent-ink / -accent-hover / -accent-soft / -accent-soft-ink。 --- */
-  --color-accent: #f2f2f2;                          /* shadcn hover wash（灰） */
-  --color-accent-hover: #0061cf;
-  --color-accent-ink: #0070f3;                      /* 链接/强调文本/选中填充 ≈4.8:1 */
-  --color-accent-soft: #eaf3ff;                     /* 浅蓝 wash */
-  --color-accent-soft-ink: #0a5fb8;                 /* accent-soft 上的文本 ≈6:1 */
-  --color-primary-hover: #2a2a2a;                   /* 黑按钮 hover（深灰） */
+  /* --- 唯一功能色（Notion/Claude 系蓝） --- */
+  --color-accent: #f0ede6;
+  --color-accent-ink: #2f6fed;
+  --color-accent-soft: #e8f0fe;
+  --color-accent-soft-ink: #1a4fad;
 
-  /* --- 语义状态（DESIGN §3.3；soft 变体 + 文案/符号非颜色线索） --- */
-  --color-success: oklch(0.52 0.12 158);
-  --color-warning: oklch(0.6 0.13 70);
-  --color-error: oklch(0.55 0.2 25);
-  --color-info: oklch(0.55 0.15 252);
-  --color-medical: oklch(0.5 0.21 24);              /* 安全边界（最高信号） */
-  --color-medical-strong: #ff5a5f;                  /* 深色对比带上的安全红（≥4.5:1） */
-  --color-success-soft: oklch(0.96 0.02 158);
-  --color-warning-soft: oklch(0.96 0.025 75);
-  --color-error-soft: oklch(0.96 0.02 22);
-  --color-info-soft: oklch(0.96 0.02 252);
-  --color-medical-soft: oklch(0.96 0.02 22);
+  /* --- 语义状态（soft + 非颜色线索） --- */
+  --color-success: #2d6a4f;
+  --color-warning: #8a6d1f;
+  --color-error: #c23b22;
+  --color-info: #2f6fed;
+  --color-medical: #c23b22;
+  --color-medical-strong: #ff8a80;
+  --color-success-soft: #e8f2ed;
+  --color-warning-soft: #f7f0dc;
+  --color-error-soft: #fceeea;
+  --color-info-soft: #e8f0fe;
+  --color-medical-soft: #fceeea;
 
-  /* --- 语义 z-index（永不使用任意值） --- */
-  --z-dropdown: 10;
-  --z-sticky: 20;
-  --z-modal-backdrop: 30;
-  --z-modal: 40;
-  --z-toast: 50;
-  --z-tooltip: 60;
+  --safety-band: #1a1a18;
+  --safety-ink: #faf8f5;
 
-  /* --- 语义动效（150–250ms，ease-out；默认静止） --- */
-  --duration-fast: 150ms;
-  --duration-base: 200ms;
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-
-  /* --- 悬浮浮层唯一允许的极淡阴影（≤8px blur；DESIGN §6） --- */
-  --shadow-elevated: 0 1px 2px oklch(0 0 0 / 0.04), 0 4px 8px oklch(0 0 0 / 0.04);
+  /* --- 材质：微投影阶梯（Apple / JetBrains Islands） --- */
+  --shadow-island: 0 1px 2px oklch(0.2 0.01 85 / 0.03), 0 3px 8px oklch(0.2 0.01 85 / 0.04);
+  --shadow-elevated: 0 2px 4px oklch(0.2 0.01 85 / 0.04), 0 12px 28px oklch(0.2 0.01 85 / 0.08);
+  --shadow-composer: 0 1px 2px oklch(0.2 0.01 85 / 0.03), 0 4px 12px oklch(0.2 0.01 85 / 0.05);
 }
 
-/* --- 字体：Geist Sans/Mono（Google Fonts；index.html 加载） --- */
 @theme {
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans:
+    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-serif: Georgia, "Songti SC", "Noto Serif SC", "Source Serif 4", "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: var(--font-serif);
 }
 
-/* --- 固定字号刻度（DESIGN §4.1；product register 不用 clamp） --- */
 @theme {
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.4;
@@ -104,13 +102,10 @@
   --text-display: 2.5rem;
   --text-display--line-height: 1.1;
   --text-display--letter-spacing: -0.03em;
-  --text-label: 0.875rem;
-  --text-label--line-height: 1.4;
   --text-metadata: 0.75rem;
   --text-metadata--line-height: 1.4;
 }
 
-/* --- shadcn 变量 → Tailwind 工具类（@theme inline 引用运行时 CSS 变量） --- */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -143,7 +138,6 @@
   --color-accent-ink: var(--color-accent-ink);
   --color-accent-soft: var(--color-accent-soft);
   --color-accent-soft-ink: var(--color-accent-soft-ink);
-  --color-primary-hover: var(--color-primary-hover);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
@@ -155,16 +149,17 @@
   --color-error-soft: var(--color-error-soft);
   --color-info-soft: var(--color-info-soft);
   --color-medical-soft: var(--color-medical-soft);
+  --color-safety-ink: var(--safety-ink);
 
-  /* --- 圆角刻度：xs 2 / sm 4 / md 6 / lg 8 / xl 8（克制，卡片 ≤8px） --- */
   --radius-xs: 2px;
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
-  --radius-xl: calc(var(--radius) + 2px);
-  --radius-2xl: calc(var(--radius) + 6px);
-  --radius-3xl: calc(var(--radius) + 10px);
-  --radius-4xl: calc(var(--radius) + 18px);
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.25rem;
+  --radius-4xl: 1.5rem;
+  --font-heading: var(--font-display);
 }
 
 @layer base {
@@ -172,18 +167,29 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply antialiased bg-background text-foreground;
     font-feature-settings: "cv11", "ss01";
   }
   ::selection {
     background: var(--color-ink);
     color: #ffffff;
   }
+  html {
+    @apply font-sans;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
 }
 
 /* --- 减少动效（非可选） --- */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -191,17 +197,58 @@
   }
 }
 
-/* --- 骨架加载（内容加载用 skeleton，不用居中转圈） --- */
-@keyframes skeleton-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+/* --- 安全边界黑带（仅聊天安全提示） --- */
+.safety-band {
+  background: var(--safety-band);
+  color: var(--safety-ink);
 }
-.skeleton {
-  border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-panel) 25%, var(--color-panel-strong) 50%, var(--color-panel) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+
+.dark {
+  --background: #141312;
+  --foreground: #f5f3ee;
+  --card: #1e1d1a;
+  --card-foreground: #f5f3ee;
+  --popover: #1e1d1a;
+  --popover-foreground: #f5f3ee;
+  --primary: #f5f3ee;
+  --primary-foreground: #141312;
+  --secondary: #252420;
+  --secondary-foreground: #f5f3ee;
+  --muted: #252420;
+  --muted-foreground: #a8a49a;
+  --accent: #252420;
+  --accent-foreground: #f5f3ee;
+  --destructive: #e07a6a;
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: #6b9cff;
+
+  --color-canvas: #141312;
+  --color-surface: #1e1d1a;
+  --color-panel: #252420;
+  --color-panel-strong: #2f2e29;
+  --color-ink: #f5f3ee;
+  --color-body: #e4e0d6;
+  --color-faint: #a8a49a;
+  --color-accent-hover: #8bb0ff;
+  --color-accent-ink: #6b9cff;
+  --color-accent-soft: #1e2a44;
+  --color-accent-soft-ink: #9ec0ff;
+  --color-success: #6aaf90;
+  --color-warning: #c4a35a;
+  --color-error: #e07a6a;
+  --color-info: #6b9cff;
+  --color-medical: #e07a6a;
+  --color-medical-strong: #ff8a80;
+  --color-success-soft: #1a2e24;
+  --color-warning-soft: #2e2818;
+  --color-error-soft: #2e1c18;
+  --color-info-soft: #1e2a44;
+  --color-medical-soft: #2e1c18;
+  --safety-band: #0f0e0c;
+  --safety-ink: #f5f3ee;
+
+  --shadow-island: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 2px 8px rgba(0, 0, 0, 0.35);
 }

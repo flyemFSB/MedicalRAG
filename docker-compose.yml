@@ -1,12 +1,7 @@
-# MedicalRAG 根 docker-compose.yml —— 唯一 Compose 入口（ADR 0053 / compose-topology ticket）。
-#
-# docker compose up -d 默认启动全部中间件与应用服务：核心中间件（PostgreSQL/Redis/Qdrant）
-# + 应用服务（api/agent/worker/web）。自托管 Phoenix（Postgres 后端）为可选 observability
-# profile（ADR 0082）；集成测试中间件为可选 test profile（ADR 0080，宿主端口错开避免与默认栈冲突）。
-# Qdrant 单容器部署。全部镜像钉 tag（version-baseline §5，禁 latest）；包镜像走阿里云（ADR 0065）。
-#
-# 生产边界：中间件端口只绑定 127.0.0.1（容器网络内服务互访，不对外暴露）；
-# 数据库密码等敏感值经 .env 注入（见 .env.example），对外部署必须显式设置。
+# MedicalRAG root Compose stack (single entrypoint).
+# Default: middleware (Postgres/Redis/Qdrant/RabbitMQ) + apps (migrate/api/agent/worker/web).
+# Profiles: observability (self-hosted Phoenix), test (integration middleware).
+# Host ports bind 127.0.0.1 only. Secrets via .env (see .env.example). Images pin tags.
 
 name: medicalrag
 
@@ -18,7 +13,8 @@ volumes:
   postgres-data:
   redis-data:
   qdrant-data:
-  # 对象存储本地适配器共享根：api 写入摄取原始对象，worker 消费（ADR 0075）
+  rabbitmq-data:
+  # Shared object-storage root: api writes, worker consumes
   objects-data:
 
 x-default-limits: &default-limits
@@ -28,7 +24,7 @@ x-default-limits: &default-limits
         cpus: "1.0"
         memory: 512M
 
-# 默认 json-file driver 无上限：常驻容器必须轮转，防日志慢性吃满磁盘
+# json-file driver defaults to unbounded; rotate to avoid disk fill
 x-logging: &default-logging
   driver: json-file
   options:
@@ -51,10 +47,10 @@ services:
       -c max_connections=20
       -c work_mem=2MB
     ports:
-      # 仅本机可达；容器间走 app 网络的服务名。
+      # Host-local only; containers use service names on the app network
       - "127.0.0.1:5432:5432"
     volumes:
-      # PG18+ 镜像官方布局：单挂载 /var/lib/postgresql，数据落在 <major>/docker 子目录
+      # PG18+ image layout: single mount at /var/lib/postgresql
       - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medicalrag} -d ${POSTGRES_DB:-medicalrag}"]
@@ -65,22 +61,26 @@ services:
       start_period: 5s
     networks: [app]
     restart: unless-stopped
-    # fast shutdown 需要时间完成检查点，默认 10s 会被 SIGKILL
+    # fast shutdown needs time for checkpoints; default 10s gets SIGKILL
     stop_grace_period: 30s
     logging: *default-logging
     <<: *default-limits
 
   redis:
     image: redis:8.10-alpine
-    # AOF everysec 兜底（丢至多 1s，摄取链路有 outbox/PG 补偿）；关 RDB 免双份写放大；
-    # 显式 maxmemory：noeviction 下写满即 fail-fast，好过撞容器限额被 OOM-kill
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    # AOF everysec (≤1s loss; outbox/PG compensates); no RDB; noeviction fail-fast
+    # under write pressure instead of OOM-kill at the container limit.
+    # requirepass：内网 app 网络内最小纵深（被攻陷的 web 容器不可无凭据读写会话）。
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-medicalrag}
+    command:
+      ["redis-server", "--requirepass", "${REDIS_PASSWORD:-medicalrag}", "--appendonly", "yes", "--appendfsync", "everysec", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -92,8 +92,8 @@ services:
     <<: *default-limits
 
   qdrant:
-    image: qdrant/qdrant:v1.19.0
-    # 1 CPU 限额下限制并发搜索线程，抑制内存放大（ADR 0081）
+    image: qdrant/qdrant:v1.19.1
+    # Cap search threads under 1 CPU to limit memory amplification
     environment:
       QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS: "2"
     ports:
@@ -102,7 +102,7 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
-      # qdrant 镜像无 curl/wget；bash /dev/tcp 探测 6333（官方推荐方式）
+      # Image has no curl/wget; bash /dev/tcp probe is the recommended approach
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 5s
       timeout: 3s
@@ -111,7 +111,7 @@ services:
       start_period: 5s
     networks: [app]
     restart: unless-stopped
-    # HNSW/优化器构建期峰值超出 512M，单独放宽到 1G
+    # HNSW/optimize peaks exceed the 512M default limit
     deploy:
       resources:
         limits:
@@ -119,8 +119,32 @@ services:
           memory: 1G
     logging: *default-logging
 
-  # --- 一次性初始化：为 Aegra 与 Phoenix 建独立库（幂等；agent/observability 各用一库） ---
+  rabbitmq:
+    image: rabbitmq:4.3-management-alpine
+    # Durable task transport for the ingestion pipeline (ADR 0086): persistent
+    # publish + quorum task queue declared by taskiq-aio-pika at worker startup.
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-medicalrag}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medicalrag}
+    ports:
+      # 5672 AMQP; 15672 management UI (ops debugging of queues / dead letters)
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_interval: 2s
+      start_period: 20s
+    networks: [app]
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-limits
 
+  # One-shot: create separate DBs for Aegra and Phoenix (idempotent)
   db-init:
     image: postgres:18.4-alpine
     depends_on:
@@ -140,14 +164,11 @@ services:
     networks: [app]
     restart: "no"
 
-  # --- 应用服务（各 app 实现后补齐 Dockerfile；见 infra/ 部署资产目录职责） ---
-
-  # 一次性迁移 Job（ADR 0080）：api 启动前把 schema 推到 head；多副本时由
-  # Compose depends_on 保证先于 api 完成，避免并发迁移竞争。
+  # One-shot migration job: push schema to head before api starts
   migrate:
     build:
       context: .
-      dockerfile: infra/api/Dockerfile
+      dockerfile: apps/api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -160,9 +181,11 @@ services:
     networks: [app]
 
   api:
+    # 应用容器崩溃/宿主重启后自愈（中间件已有 restart，应用服务此前为默认 no，语义不一致）
+    restart: unless-stopped
     build:
       context: .
-      dockerfile: infra/api/Dockerfile
+      dockerfile: apps/api/Dockerfile
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -174,19 +197,14 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       MEDICALRAG_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-medicalrag}:${POSTGRES_PASSWORD:-medicalrag}@postgres:5432/${POSTGRES_DB:-medicalrag}
-      MEDICALRAG_REDIS_URL: redis://redis:6379/0
+      MEDICALRAG_REDIS_URL: redis://:${REDIS_PASSWORD:-medicalrag}@redis:6379/0
       MEDICALRAG_QDRANT_URL: http://qdrant:6333
-      MEDICALRAG_LLM_BASE_URL: ${MEDICALRAG_LLM_BASE_URL:-https://api.openai.com}
-      MEDICALRAG_LLM_API_KEY: ${MEDICALRAG_LLM_API_KEY:-}
-      MEDICALRAG_LLM_MODEL: ${MEDICALRAG_LLM_MODEL:-gpt-4o-mini}
-      MEDICALRAG_EMBEDDING_MODEL: ${MEDICALRAG_EMBEDDING_MODEL:-text-embedding-3-small}
-      MEDICALRAG_RERANK_MODEL: ${MEDICALRAG_RERANK_MODEL:-}
       MEDICALRAG_COOKIE_SECURE: ${MEDICALRAG_COOKIE_SECURE:-false}
       MEDICALRAG_OPERATOR_EMAILS: ${MEDICALRAG_OPERATOR_EMAILS:-}
       MEDICALRAG_LOG_LEVEL: ${MEDICALRAG_LOG_LEVEL:-INFO}
       MEDICALRAG_OBJECT_ROOT: /data/objects
     volumes:
-      # 对象存储本地适配器共享根：api（上传/摄取触发）与 worker 同卷同路径
+      # Same volume and path as worker so handoff paths match
       - objects-data:/data/objects
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
@@ -200,9 +218,10 @@ services:
     <<: *default-limits
 
   agent:
+    restart: unless-stopped
     build:
       context: .
-      dockerfile: infra/agent/Dockerfile
+      dockerfile: apps/agent/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -212,17 +231,30 @@ services:
         condition: service_healthy
       db-init:
         condition: service_completed_successfully
-    # ADR 0076/0082：Aegra 唯一观测摄取 owner；export fail-open（端点不可用仅降级可观测）。
     environment:
-      # aegra 独立库（与 api 的 alembic_version 迁移表隔离，避免迁移链污染）
+      # Aegra own database (separate from api alembic history)
       DATABASE_URL: postgresql://${POSTGRES_USER:-medicalrag}:${POSTGRES_PASSWORD:-medicalrag}@postgres:5432/medicalrag_aegra
-      RUN_MIGRATIONS_ON_STARTUP: "true"
       MEDICALRAG_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-medicalrag}:${POSTGRES_PASSWORD:-medicalrag}@postgres:5432/${POSTGRES_DB:-medicalrag}
       MEDICALRAG_QDRANT_URL: http://qdrant:6333
-      MEDICALRAG_REDIS_URL: redis://redis:6379/0
+      MEDICALRAG_REDIS_URL: redis://:${REDIS_PASSWORD:-medicalrag}@redis:6379/0
       MEDICALRAG_LLM_BASE_URL: ${MEDICALRAG_LLM_BASE_URL:-https://api.openai.com}
       MEDICALRAG_LLM_API_KEY: ${MEDICALRAG_LLM_API_KEY:-}
       MEDICALRAG_LLM_MODEL: ${MEDICALRAG_LLM_MODEL:-gpt-4o-mini}
+      MEDICALRAG_EMBEDDING_MODEL: ${MEDICALRAG_EMBEDDING_MODEL:-text-embedding-3-small}
+      MEDICALRAG_RERANK_MODEL: ${MEDICALRAG_RERANK_MODEL:-}
+      MEDICALRAG_QDRANT_COLLECTION: ${MEDICALRAG_QDRANT_COLLECTION:-medical_chunks_v1}
+      MEDICALRAG_QDRANT_EMBEDDING_DIM: ${MEDICALRAG_QDRANT_EMBEDDING_DIM:-1536}
+      # 聊天并发闸 / 检索策略：与 api 侧同一 .env 文档旋钮（图入口与 SSE 入口共享语义）
+      MEDICALRAG_RETRIEVAL_POLICY_VERSION: ${MEDICALRAG_RETRIEVAL_POLICY_VERSION:-2}
+      MEDICALRAG_RETRIEVAL_CONTEXT_CAP: ${MEDICALRAG_RETRIEVAL_CONTEXT_CAP:-8}
+      MEDICALRAG_RETRIEVAL_EVIDENCE_MIN_SCORE: ${MEDICALRAG_RETRIEVAL_EVIDENCE_MIN_SCORE:-0}
+      MEDICALRAG_RETRIEVAL_INTENT_MIN_SCORE: ${MEDICALRAG_RETRIEVAL_INTENT_MIN_SCORE:-0.35}
+      MEDICALRAG_RETRIEVAL_RERANK_CANDIDATE_LIMIT: ${MEDICALRAG_RETRIEVAL_RERANK_CANDIDATE_LIMIT:-40}
+      MEDICALRAG_CHAT_MAX_CONCURRENT: ${MEDICALRAG_CHAT_MAX_CONCURRENT:-10}
+      MEDICALRAG_CHAT_QUEUE_WAIT_S: ${MEDICALRAG_CHAT_QUEUE_WAIT_S:-15}
+      MEDICALRAG_LLM_FIRST_PACKET_TIMEOUT_S: ${MEDICALRAG_LLM_FIRST_PACKET_TIMEOUT_S:-30}
+      # fastembed pulls Qdrant/bm25 sparse weights from HuggingFace Hub at startup
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       OTEL_TARGETS: ${OTEL_TARGETS:-}
       OTEL_SERVICE_NAME: medicalrag-agent
       PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
@@ -241,9 +273,10 @@ services:
     <<: *default-limits
 
   worker:
+    restart: unless-stopped
     build:
       context: .
-      dockerfile: infra/worker/Dockerfile
+      dockerfile: apps/worker/Dockerfile
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -251,26 +284,45 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       MEDICALRAG_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-medicalrag}:${POSTGRES_PASSWORD:-medicalrag}@postgres:5432/${POSTGRES_DB:-medicalrag}
-      MEDICALRAG_REDIS_URL: redis://redis:6379/0
+      MEDICALRAG_REDIS_URL: redis://:${REDIS_PASSWORD:-medicalrag}@redis:6379/0
+      MEDICALRAG_RABBITMQ_URL: amqp://${RABBITMQ_USER:-medicalrag}:${RABBITMQ_PASSWORD:-medicalrag}@rabbitmq:5672/
       MEDICALRAG_QDRANT_URL: http://qdrant:6333
+      MEDICALRAG_QDRANT_COLLECTION: ${MEDICALRAG_QDRANT_COLLECTION:-medical_chunks_v1}
+      MEDICALRAG_QDRANT_EMBEDDING_DIM: ${MEDICALRAG_QDRANT_EMBEDDING_DIM:-1536}
       MEDICALRAG_LLM_BASE_URL: ${MEDICALRAG_LLM_BASE_URL:-https://api.openai.com}
       MEDICALRAG_LLM_API_KEY: ${MEDICALRAG_LLM_API_KEY:-}
       MEDICALRAG_EMBEDDING_MODEL: ${MEDICALRAG_EMBEDDING_MODEL:-text-embedding-3-small}
       MEDICALRAG_MINERU_BASE_URL: ${MEDICALRAG_MINERU_BASE_URL:-}
       MEDICALRAG_MINERU_TOKEN: ${MEDICALRAG_MINERU_TOKEN:-}
+      MEDICALRAG_MINERU_CONCURRENCY: ${MEDICALRAG_MINERU_CONCURRENCY:-16}
       MEDICALRAG_CONTEXT_MODEL: ${MEDICALRAG_CONTEXT_MODEL:-}
+      MEDICALRAG_STALE_RUN_SECONDS: ${MEDICALRAG_STALE_RUN_SECONDS:-900}
+      MEDICALRAG_OUTBOX_MAX_ATTEMPTS: ${MEDICALRAG_OUTBOX_MAX_ATTEMPTS:-5}
+      # Same as agent: fastembed sparse weights via HF mirror
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       MEDICALRAG_OBJECT_ROOT: /data/objects
+    # 心跳健康检查：worker 的 outbox relay 循环周期性写入带 TTL 的 Redis 心跳键，
+    # 进程存活且循环未卡死时该键存在（worker 容器内置 python + redis 客户端）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,redis; c=redis.from_url(os.environ['MEDICALRAG_REDIS_URL']); raise SystemExit(0 if c.exists('medicalrag:worker:heartbeat') else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     volumes:
-      # 对象存储本地适配器：worker 与 api 必须看到同一根才能交接产物
+      # Shared with api so both sides see the same object root
       - objects-data:/data/objects
     networks: [app]
     logging: *default-logging
     <<: *default-limits
 
   web:
-    # ADR 0070：Vite SPA 由 Nginx 服务并同源反代 /api 与 /api/agent（prod）。
+    restart: unless-stopped
+    # Vite SPA served by Nginx; same-origin reverse proxy for /api and /api/agent
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -280,17 +332,15 @@ services:
       agent:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8080:80"
+      # nginx-unprivileged 以非 root 运行并监听 8080（ADR 0080 非 root 承诺）
+      - "127.0.0.1:8080:8080"
     networks: [app]
     logging: *default-logging
     <<: *default-limits
 
-  # --- 可选可观测（ADR 0082：自托管 Phoenix（Postgres 后端，独立库 medicalrag_phoenix）；
-  # 仅 --profile observability 启用，agent export fail-open） ---
-  # 启用前必须在 .env 设置 PHOENIX_SECRET（签发 JWT）与 OTEL_TARGETS=PHOENIX；首启后以
-  # admin@localhost 登录改密，并在 Settings 创建 system API key 回填 .env 的 PHOENIX_API_KEY
-  # （aegra 导出鉴权；未设置时认证会拒收 trace，fail-open 仅降级可观测）。
-
+  # Optional observability: self-hosted Phoenix (Postgres backend, DB medicalrag_phoenix).
+  # Enable with --profile observability. Set PHOENIX_SECRET and OTEL_TARGETS=PHOENIX in .env.
+  # After first boot: change admin password, create a system API key, set PHOENIX_API_KEY.
   phoenix:
     image: arizephoenix/phoenix:15.1.0
     profiles: [observability]
@@ -307,6 +357,7 @@ services:
       PHOENIX_DEFAULT_RETENTION_POLICY_DAYS: ${PHOENIX_DEFAULT_RETENTION_POLICY_DAYS:-90}
       PHOENIX_ALLOW_EXTERNAL_RESOURCES: "false"
       PHOENIX_TELEMETRY_ENABLED: "false"
+      PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD: ${PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD:-admin}
     ports:
       - "127.0.0.1:6006:6006"
     healthcheck:
@@ -324,8 +375,7 @@ services:
           cpus: "1.0"
           memory: 1G
 
-  # --- 可选集成测试中间件（ADR 0080；--profile test 启用；宿主端口错开默认栈） ---
-
+  # Optional integration-test middleware: --profile test; host ports offset from the default stack
   postgres-test:
     image: postgres:18.4-alpine
     profiles: [test]
@@ -337,7 +387,7 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
     tmpfs:
-      # 测试库无需持久化：tmpfs 提速且零清理负担
+      # Test data does not need persistence
       - /var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medicalrag_test -d medicalrag_test"]
@@ -361,7 +411,7 @@ services:
     networks: [app]
 
   qdrant-test:
-    image: qdrant/qdrant:v1.19.0
+    image: qdrant/qdrant:v1.19.1
     profiles: [test]
     ports:
       - "127.0.0.1:6335:6333"
@@ -374,4 +424,17 @@ services:
       retries: 10
     networks: [app]
 
-  # --- 可选集成测试中间件（ADR 0080；--profile test 启用；宿主端口错开默认栈） ---
+  rabbitmq-test:
+    image: rabbitmq:4.3-management-alpine
+    profiles: [test]
+    environment:
+      RABBITMQ_DEFAULT_USER: medicalrag_test
+      RABBITMQ_DEFAULT_PASS: medicalrag_test
+    ports:
+      - "127.0.0.1:5673:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks: [app]

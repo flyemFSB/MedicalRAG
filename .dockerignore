@@ -7,11 +7,12 @@ node_modules/
 **/*.pyc
 .pytest_cache/
 .ruff_cache/
-.turbo/
 **/dist/
 **/build/
 *.db
 test_milvus2.db
-infra/
 *.log
 .env
+# 本地运行时数据与归档：用户上传文档（对象存储根）与本地文档归档不进构建上下文
+objects/
+_archive/

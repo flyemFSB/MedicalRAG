@@ -9,6 +9,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -17,7 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { appTableFeatures, type AppTableFeatures } from "@/lib/table";
 
 /* 统一数据表（shadcn Data Table 配方：TanStack Table + shadcn Table）。
@@ -29,12 +29,13 @@ interface DataTableProps<TData extends RowData> {
   data: TData[];
   ariaLabel: string;
   loading?: boolean;
+  /** 请求失败：必须显示错误态而不是“暂无数据”（医疗证据界面不允许假空态）。 */
+  error?: unknown;
+  onRetry?: () => void;
   emptyTitle?: string;
   emptyDescription?: string;
   /** 行内操作列（右对齐；有值时自动追加「操作」列头） */
   renderRowActions?: (row: TData) => ReactNode;
-  /** 操作列宽度（默认 120px） */
-  actionsWidth?: number;
 }
 
 export function DataTable<TData extends RowData>({
@@ -42,10 +43,11 @@ export function DataTable<TData extends RowData>({
   data,
   ariaLabel,
   loading,
+  error,
+  onRetry,
   emptyTitle,
   emptyDescription,
   renderRowActions,
-  actionsWidth = 120,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const table = useTable({
@@ -59,21 +61,24 @@ export function DataTable<TData extends RowData>({
   const colSpan = columns.length + (hasActions ? 1 : 0);
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card">
+    <div className="overflow-x-auto rounded-xl border border-border/80 bg-surface shadow-2xs">
       <Table aria-label={ariaLabel}>
-        <TableHeader className="sticky top-0 z-sticky bg-card">
+        <TableHeader className="border-b border-border/60 bg-panel/45">
           {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className="hover:bg-transparent">
+            <TableRow key={headerGroup.id} className="border-b-0 hover:bg-transparent">
               {headerGroup.headers.map((header) => (
                 <TableHead
                   key={header.id}
                   scope="col"
+                  /* APG：aria-sort 只能出现在可排序列上 */
                   aria-sort={
-                    header.column.getIsSorted() === "asc"
-                      ? "ascending"
-                      : header.column.getIsSorted() === "desc"
-                        ? "descending"
-                        : "none"
+                    !header.column.getCanSort()
+                      ? undefined
+                      : header.column.getIsSorted() === "asc"
+                        ? "ascending"
+                        : header.column.getIsSorted() === "desc"
+                          ? "descending"
+                          : "none"
                   }
                 >
                   {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -116,6 +121,14 @@ export function DataTable<TData extends RowData>({
               </TableRow>
             ))}
           </TableBody>
+        ) : error ? (
+          <TableBody>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={colSpan}>
+                <ErrorState onRetry={onRetry} />
+              </TableCell>
+            </TableRow>
+          </TableBody>
         ) : data.length === 0 ? (
           <TableBody>
             <TableRow className="hover:bg-transparent">
@@ -133,10 +146,12 @@ export function DataTable<TData extends RowData>({
               // v9：getIsSelected 属 rowSelectionFeature（未注册），此处无选择语义。
               <TableRow key={row.id} className="group">
                 {row.getAllCells().map((cell) => (
-                  <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
                 ))}
                 {hasActions ? (
-                  <TableCell className={cn("text-right")} style={{ width: actionsWidth }}>
+                  <TableCell className="text-right" style={{ width: 120 }}>
                     <div className="flex justify-end gap-1 hoverable:opacity-0 hoverable:transition-opacity hoverable:group-hover:opacity-100 hoverable:group-focus-within:opacity-100">
                       {renderRowActions?.(row.original)}
                     </div>
@@ -151,27 +166,30 @@ export function DataTable<TData extends RowData>({
   );
 }
 
-function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-}: {
-  icon?: ReactNode;
-  title: string;
-  description?: string;
-  action?: ReactNode;
-}) {
+function EmptyState({ title, description }: { title: string; description?: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-      {icon ? (
-        <div className="mb-1 grid size-10 place-items-center rounded-full bg-panel text-muted-foreground">
-          {icon}
-        </div>
-      ) : null}
       <p className="text-subheading font-semibold text-ink">{title}</p>
-      {description ? <p className="max-w-[42ch] text-body-sm text-muted-foreground">{description}</p> : null}
-      {action}
+      {description ? (
+        <p className="max-w-[42ch] text-body-sm text-muted-foreground">{description}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** 请求失败态：与空态区分，并提供重试入口（role=alert 供屏幕阅读器播报）。 */
+function ErrorState({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+      <p className="text-subheading font-semibold text-ink">数据加载失败</p>
+      <p className="max-w-[42ch] text-body-sm text-muted-foreground">
+        未能读取列表数据，请稍后重试。
+      </p>
+      {onRetry ? (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          重试
+        </Button>
+      ) : null}
     </div>
   );
 }

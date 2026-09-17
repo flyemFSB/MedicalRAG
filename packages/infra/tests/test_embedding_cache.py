@@ -2,6 +2,8 @@
 
 import json
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 from medicalrag_infra.providers.embeddings import CachedEmbeddingProvider
 
 
@@ -61,10 +63,21 @@ async def test_cache_hits_skip_inner_and_backfill_misses():
 async def test_redis_failure_fails_open_to_inner():
     class BrokenRedis:
         async def mget(self, keys):
-            raise ConnectionError("redis down")
+            raise RedisConnectionError("redis down")
 
     inner = FakeInner()
     provider = CachedEmbeddingProvider(inner, BrokenRedis())
     result = await provider.embed(["q1", "q2"])
     assert len(result) == 2
     assert inner.calls == [["q1", "q2"]]
+
+
+async def test_corrupt_cache_value_fails_open_to_inner():
+    """脏缓存值（历史格式/半写入）不得击穿嵌入链路：fail-open 与连接故障同语义。"""
+    provider = CachedEmbeddingProvider(FakeInner(), FakeRedis())
+    provider._redis.store[provider._key("坏值")] = "not-json{"
+    inner = FakeInner()
+    broken_provider = CachedEmbeddingProvider(inner, provider._redis)
+    result = await broken_provider.embed(["高血压定义", "坏值"])
+    assert len(result) == 2
+    assert inner.calls == [["高血压定义", "坏值"]]

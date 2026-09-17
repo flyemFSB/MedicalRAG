@@ -47,8 +47,9 @@ version-baseline §4 记录的钉版理由是"typescript-eslint 8.65 仅 <6.1；
 4. **version-baseline §4 同步**：TypeScript 行改钉 7.0.x 双别名并注明各自用途；
    移除 typescript-eslint 钉版行（幽灵依赖从未安装，"不支持 TS7"的钉版理由随
    oxlint 方案失效）。
-5. TS 7.1 交付新 API 后收敛为单包直装（届时复评 openapi-typescript 兼容性并
-   重跑 contract-check），本 ADR 不预支该迁移。
+5. **2026-09 更新（7.1 未 GA）**：npm `latest` 仍为 7.0.2；7.1 仅 `next` 每日 dev
+   （`typescript@7.1.0-dev.*`）。**不采用非正式版**。双别名保持到 7.1 正式版 +
+   openapi-typescript 支持经典 JS API 后，再删 typescript6 并改钉正式 tag。
 
 ## 后果
 
@@ -58,7 +59,7 @@ version-baseline §4 记录的钉版理由是"typescript-eslint 8.65 仅 <6.1；
   typescript6 的 6.0 API re-export，contract-check 实测绿）——与 ADR 0083 记录的
   状态一致，不构成新增偏差。
 - 钉版同步点：`apps/web/package.json`（两处别名 + 脚本）、`version-baseline` §4；
-  升级任一侧须重跑 web 门禁（turbo lint/typecheck/test:unit/build、contract-check）。
+  升级任一侧须重跑 web 门禁（pnpm --filter @medicalrag/web run check、contract-check）。
 - 编辑器侧可选安装 VS Code 的 TypeScript 7 扩展获得原生 LSP；不安装时编辑器
   继续按 tsconfig 工作于兼容模式，与 CI 无耦合。
 

@@ -66,18 +66,21 @@ async def test_index_embeds_with_structure_and_upserts_points():
     assert upsert["collection_name"] == "med_v1"
     points = upsert["points"]
     assert len(points) == 2
-    assert points[0].id == "doc-1:0"
-    assert points[1].id == "doc-1:1"
+    import uuid
+
+    assert points[0].id == str(uuid.uuid5(uuid.NAMESPACE_URL, "doc-1:0"))
+    assert points[1].id == str(uuid.uuid5(uuid.NAMESPACE_URL, "doc-1:1"))
+    assert points[0].payload["chunk_id"] == "doc-1:0"
     assert points[0].payload["title"] == "高血压指南"
     assert points[0].payload["source_id"] == "src-1"
     assert points[0].payload["workspace_id"] == "ws-1"
     # ADR 0079/0013：索引时点先落为不合格，published 阶段才翻转资格
     assert points[0].payload["is_eligible"] is False
-    # dense vector from fake embeddings
+    # 模拟嵌入模型生成的稠密向量
     assert points[0].vector["dense_vec"] == [0.0]
     assert points[1].vector["dense_vec"] == [1.0]
-    # sparse vector from fastembed static bm25 model
+    # fastembed 静态 BM25 模型生成的稀疏向量
     assert points[0].vector["sparse_vec"].indices == [0, 2]
     assert points[0].vector["sparse_vec"].values == [1.0, 0.5]
-    # text stored in payload
+    # 存储于 payload 中的文本
     assert points[0].payload["text"] == "高血压\n定义。"

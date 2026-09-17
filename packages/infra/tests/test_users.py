@@ -1,18 +1,17 @@
 """SqlUserRepository SQLite 行为检查。"""
 
-import uuid
-
 import pytest
 
 from medicalrag_core.identity.user import User
+from medicalrag_core.ids import uuid7
 from medicalrag_infra.persistence.db import create_engine_and_session_factory
 from medicalrag_infra.persistence.models import Base
 from medicalrag_infra.persistence.users import SqlUserRepository
 
 
 @pytest.fixture
-async def repo() -> SqlUserRepository:
-    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite://")
+async def repo(persistence_url: str) -> SqlUserRepository:
+    engine, factory = create_engine_and_session_factory(persistence_url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield SqlUserRepository(factory)
@@ -20,7 +19,7 @@ async def repo() -> SqlUserRepository:
 
 
 async def test_create_and_get_by_email(repo: SqlUserRepository):
-    user = User(id=str(uuid.uuid7()), email="a@example.com", password_hash="hash")
+    user = User(id=str(uuid7()), email="a@example.com", password_hash="hash")
     await repo.create(user)
     found = await repo.get_by_email("a@example.com")
     assert found is not None

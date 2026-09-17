@@ -1,10 +1,10 @@
----
+﻿---
 status: accepted
 ---
 
 # UUIDv7 is the universal business identifier
 
-MedicalRAG uses UUID version 7 (UUIDv7) as the primary key for every business record: users, workspaces, conversations, messages, knowledge bases, documents, chunks, Ingestion Runs, chat Runs, run events, audit events, feedback, intent-tree nodes, slot schemas, model targets, and outbox rows. IDs are generated in the application layer, not by the database. This replaces Ragent's Snowflake distributed-id scheme, which the [stack replacement matrix](../reference/stack-replacement-matrix.md) had left open.
+MedicalRAG uses UUID version 7 (UUIDv7) as the primary key for every business record: users, workspaces, conversations, messages, knowledge bases, documents, chunks, Ingestion Runs, chat Runs, run events, audit events, feedback, intent-tree nodes, slot schemas, model targets, and outbox rows. IDs are generated in the application layer, not by the database. This replaces Ragent's Snowflake distributed-id scheme, which the stack replacement matrix (local archive) had left open.
 
 Python 3.14's standard-library `uuid` module provides `uuid.uuid7()`, so no third-party ID library or coordinating service is required. UUIDv7 is time-ordered and random within each time quantum, giving monotonic-ish, collision-free, index-friendly identifiers that any process (API, Agent, arq Worker, or evaluation) can create independently of the write database.
 

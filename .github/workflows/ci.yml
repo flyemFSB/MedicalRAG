@@ -1,5 +1,5 @@
 # MedicalRAG CI（ADR 0080：文档门禁机器化）。
-# 提交级 = 格式/lint/typecheck/单元；PR 级 = 契约测试 + 安全审计 + 镜像构建。
+# 提交级 = 格式/lint/typecheck/单元 + schema 漂移；PR 级 = 变更行覆盖率（ADR 0088）+ 契约测试 + eval-retrieval + 安全审计 + 镜像构建。
 # 集成/E2E/eval-answer 属合并级，本地或发布流水线执行（见 AGENTS.md 测试门禁）。
 name: ci
 
@@ -8,33 +8,64 @@ on:
     branches: [main]
   pull_request:
 
+# 最小权限：默认只读，需要写权限的 job 单独提权
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # uv 与镜像 tag 三处对齐钉版（version-baseline §1/§5）；升级需同批更新
+  UV_VERSION: "0.12.10"
 
 jobs:
   python:
     name: Python lint/type/test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
         with:
+          # 变更行覆盖门禁要拿 PR 基线做 diff；浅克隆里 origin/<base> 不存在，门禁会直接报错
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
+      - name: Sync（locked：与 lockfile 不一致即失败，禁自动改锁）
+        run: uv sync --locked --all-packages
       - name: Ruff format check
         run: uv run ruff format --check .
       - name: Ruff lint
         run: uv run ruff check .
       - name: Pyright（basic 起步，ADR 0080）
         run: uv run pyright
-      - name: Unit & contract tests（覆盖率门禁 80%）
-        run: uv run pytest --cov --cov-report=term-missing
+      - name: 包边界（core↛infra/apps、apps 互不 import）
+        run: uv run python scripts/ci/check_package_boundaries.py
+      # 检索指标回归（含限定阈值）：指标跌破下限或空召回率超上限即红。
+      # 边界：候选集来自 fixtures，本步不跑真实检索器（见 docs/testing-seams.md）
+      - name: Retrieval eval（fixtures 指标回归，未达下限即红）
+        run: uv run --package medicalrag-evaluation python -m medicalrag_evaluation.run eval-retrieval apps/evaluation/fixtures/retrieval.jsonl
+      # 显式排除 integration：本 job 无中间件，集成用例会静默 skip 后仍报绿（假门禁）
+      - name: Unit & contract tests（总量地板 75%；含 alembic check 漂移门禁）
+        run: uv run pytest -m "not integration" --cov --cov-report=term-missing --cov-report=xml
+      # 阻断门禁是变更行而非总量（ADR 0088）：本次改动的行必须被执行到
+      - name: 变更行覆盖率门禁（patch coverage）
+        if: github.event_name == 'pull_request'
+        run: uv run python scripts/ci/check_patch_coverage.py --base origin/${{ github.base_ref }}
+      # 关键包 100% 约定（ADR 0088）：medical-core 是纯逻辑与安全边界所在，可确定性穷举。
+      # 口径含分支（pyproject [tool.coverage.run] branch = true）：静默未执行的分支同样会使该步变红
+      - name: medical-core 覆盖率 100%（行 + 分支）
+        run: uv run coverage report --include="packages/medical-core/src/*" --fail-under=100
 
   web:
     name: Web lint/type/test/build/contract
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # pnpm 12（ADR 0083）：官方 pnpm/setup 下载自包含 release 二进制并安装 runtime，
       # 取代 pnpm/action-setup（仅支持 ≤10）+ actions/setup-node；版本读 packageManager。
       - uses: pnpm/setup@v2
@@ -42,38 +73,43 @@ jobs:
           runtime: node@24
           cache: true
           install: false
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v9
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: pnpm install --frozen-lockfile
       - name: OpenAPI 契约导出与漂移检查（ADR 0071）
         run: |
           uv run --package medicalrag-api python scripts/dev/export_openapi.py
           pnpm --filter @medicalrag/web contract-check
-      - name: Turbo lint/typecheck/test:unit/build
-        run: pnpm turbo run lint typecheck test:unit build
+      - name: Web 门禁（lint/typecheck/test:unit/build/fmt:check）
+        run: pnpm --filter @medicalrag/web run check
 
   security:
     name: Security audits
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Gitleaks 密钥扫描
-        uses: gitleaks/gitleaks-action@v2
+        # 第三方 action 钉 full commit SHA（v2 标签的解引用提交），防 tag 劫持
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v9
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
       - name: Python 依赖漏洞审计（pip-audit over lock 导出）
         run: |
-          uv export --frozen --no-dev --format requirements-txt -o /tmp/requirements.txt
-          # --no-hashes：pip-audit 内部用 python3.12 做 dry-run，与 lock 的 3.14 平台 wheel hash 不匹配；
-          # 它只审计版本号，hash 无意义。workspace 成员的 editable 行同样会让 dry-run 崩溃（目录无 hash）。
-          uv export --frozen --no-dev --no-hashes --format requirements-txt -o /tmp/requirements.txt
-          sed -i '/^-e \.\//d' /tmp/requirements.txt
+          # --no-hashes：pip-audit 内部用 python3.12 做 dry-run，与 lock 的平台 wheel hash 不匹配；
+          # 它只审计版本号，hash 无意义。
+          # --no-emit-local：直接排除 workspace 成员的 editable 行，无需 sed 二次加工。
+          # --all-packages：导出全部 workspace 成员的依赖——根项目是无依赖容器，
+          # 缺该参数会导出 0 条 requirement，pip-audit 审计空文件恒绿（假门禁）。
+          uv export --all-packages --frozen --no-dev --no-hashes --no-emit-local --format requirements-txt -o /tmp/requirements.txt
           uvx pip-audit -r /tmp/requirements.txt --strict
       - uses: pnpm/setup@v2
         with:
@@ -86,7 +122,17 @@ jobs:
   docker:
     name: Docker build（四镜像）
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Build api/agent/worker/web images
-        run: docker compose build api agent worker web
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if ! git diff --name-only origin/${{ github.base_ref }} | grep -qE "(Dockerfile|docker-compose|pyproject\.toml|uv\.lock|pnpm-lock\.yaml|package\.json)"; then
+              echo "无容器配置文件或依赖清单变动，跳过四镜像重复构建"
+              exit 0
+            fi
+          fi
+          docker compose build api agent worker web

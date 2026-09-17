@@ -5,15 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "medicalrag-evaluation"
 version = "0.1.0"
-description = "MedicalRAG isolated evaluation runner: eval-retrieval (deterministic) + eval-answer (RAGAS)"
-requires-python = ">=3.14"
-dependencies = ["medicalrag-core"]
-
-[tool.uv.sources]
-medicalrag-core = { workspace = true }
+description = "MedicalRAG isolated evaluation runner (deterministic retrieval metrics + optional RAGAS)"
+requires-python = ">=3.12"
+dependencies = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/medicalrag_evaluation"]
-
-[tool.hatch.build.targets.sdist]
-include = ["src/medicalrag_evaluation"]

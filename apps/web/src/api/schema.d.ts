@@ -53,29 +53,9 @@ export interface paths {
         };
         /**
          * Prometheus Metrics
-         * @description Prometheus 监控抓取端点（输出 OpenMetrics v0.0.4 纯文本；严格脱敏：仅包含指标名与度量数值）。
+         * @description Prometheus 监控抓取端点（官方 generate_latest 文本；严格脱敏：仅指标名与数值）。
          */
         get: operations["prometheus_metrics_metrics_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Metrics Snapshot
-         * @description 进程内度量指标 JSON 格式快照（供开发与运维排查调试使用；监控抓取请访问 /metrics）。
-         */
-        get: operations["metrics_snapshot_api_metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -153,31 +133,13 @@ export interface paths {
         };
         /**
          * Me
-         * @description 获取当前已登录用户的基本信息。
+         * @description 获取当前已登录用户的基本信息（含角色，供前端权限门禁与 Topbar 条件渲染）。
+         *
+         *     复用 deps.current_user 依赖：token→validate→get_user→工作区校验与 deps 同源，消除重复。
          */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Chat Stream
-         * @description 流式医疗问答端点：通过 SSE 实时向客户端推送意图分析、检索证据、安全评估及 Token 生成流。
-         */
-        post: operations["chat_stream_api_chat_stream_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -220,8 +182,30 @@ export interface paths {
         /**
          * Submit Feedback
          * @description 提交针对单条助手回答的用户反馈（赞同/反对及可选的文字说明）。
+         *
+         *     必须校验会话归属：否则任意用户可对他人会话写入反馈（对象级越权写，OWASP API1）。
          */
         post: operations["submit_feedback_api_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sample Questions
+         * @description 列出当前用户工作区的启用的推荐样例问题（按创建顺序）。
+         */
+        get: operations["list_sample_questions_api_sample_questions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -255,7 +239,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Dashboard */
+        /**
+         * Dashboard
+         * @description 运营看板：operator 为平台级角色，统计口径为全平台（不按当前个人工作区过滤）。
+         */
         get: operations["dashboard_api_admin_dashboard_get"];
         put?: never;
         post?: never;
@@ -311,7 +298,7 @@ export interface paths {
         put?: never;
         /**
          * Unpublish Document
-         * @description 下架文档：经由 Outbox 清除向量点的检索发布资格，使切片退出检索；操作完全可逆。
+         * @description 下架文档：经由 Outbox 清除向量点的检索发布资格，使分块退出检索；操作完全可逆。
          */
         post: operations["unpublish_document_api_admin_documents__doc_id__unpublish_post"];
         delete?: never;
@@ -352,9 +339,9 @@ export interface paths {
         post?: never;
         /**
          * Delete Document
-         * @description 级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的切片和文档实体行。
+         * @description 级联物理删除文档：经由 Outbox 异步级联清除 Qdrant 向量点及 PostgreSQL 中的分块和文档实体行。
          *
-         *     仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿切片。
+         *     仅处于终态（PUBLISHED 或 FAILED）的文档允许执行删除：若删除正在进行摄取的文档，后续摄取阶段将向已删除的记录写入状态并产生孤儿分块。
          */
         delete: operations["delete_document_api_admin_documents__doc_id__delete"];
         options?: never;
@@ -373,9 +360,29 @@ export interface paths {
         put?: never;
         /**
          * Trigger Orphan Scan
-         * @description 手动触发孤儿切片对账与清理任务（供管理员按需触发）。
+         * @description 手动触发孤儿分块对账与清理任务（供运营管理员按需触发）。
          */
         post: operations["trigger_orphan_scan_api_admin_maintenance_orphan_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/maintenance/object-scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Object Scan
+         * @description 手动触发对象存储孤儿对象对账与清理任务（清理未被任何摄取运行元数据引用的存储对象）。
+         */
+        post: operations["trigger_object_scan_api_admin_maintenance_object_scan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -409,6 +416,9 @@ export interface paths {
         /**
          * Get Document Content
          * @description 获取文档原始文件二进制流（供在线预览或下载，遵循格式化渲染规范）。
+         *
+         *     流式产出（分块读取对象存储），不把最大 200MB 的原始对象整读进进程内存——
+         *     两个并发预览即可击穿容器内存上限。
          */
         get: operations["get_document_content_api_admin_documents__doc_id__content_get"];
         put?: never;
@@ -426,7 +436,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Ingestion Runs */
+        /**
+         * List Ingestion Runs
+         * @description 摄取运行历史（平台级全量；operator 数据面语义见模块 docstring）。
+         */
         get: operations["list_ingestion_runs_api_admin_ingestion_runs_get"];
         put?: never;
         post?: never;
@@ -445,7 +458,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry Ingestion Run */
+        /**
+         * Retry Ingestion Run
+         * @description 重放失败的摄取运行：从记录的失败阶段复位续跑（而非从头重摄）。
+         */
         post: operations["retry_ingestion_run_api_admin_ingestion_runs__run_id__retry_post"];
         delete?: never;
         options?: never;
@@ -522,40 +538,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/model-targets/{target_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Model Target */
-        patch: operations["update_model_target_api_admin_model_targets__target_id__patch"];
-        trace?: never;
-    };
-    "/api/admin/credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Credentials */
-        get: operations["list_credentials_api_admin_credentials_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/traces": {
         parameters: {
             query?: never;
@@ -563,7 +545,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Traces */
+        /**
+         * List Traces
+         * @description 追踪列表（平台级全量；operator 数据面语义见模块 docstring）。
+         */
         get: operations["list_traces_api_admin_traces_get"];
         put?: never;
         post?: never;
@@ -580,7 +565,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Trace */
+        /**
+         * Get Trace
+         * @description 追踪详情：按主键直查（历史记录可达，且不拖全量列表线性查找）。
+         */
         get: operations["get_trace_api_admin_traces__run_id__get"];
         put?: never;
         post?: never;
@@ -624,40 +612,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/audit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Audit */
-        get: operations["list_audit_api_admin_audit_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/sample-questions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Sample Questions */
-        get: operations["list_sample_questions_api_admin_sample_questions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/feedback": {
         parameters: {
             query?: never;
@@ -665,7 +619,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Feedback */
+        /**
+         * List Feedback
+         * @description 用户反馈（平台级全量；operator 数据面语义见模块 docstring）。
+         */
         get: operations["list_feedback_api_admin_feedback_get"];
         put?: never;
         post?: never;
@@ -679,23 +636,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AuditOut */
-        AuditOut: {
-            /** Id */
-            id: string;
-            /** Actor Email */
-            actor_email: string;
-            /** Action */
-            action: string;
-            /** Entity Type */
-            entity_type: string;
-            /** Entity Name */
-            entity_name: string;
-            /** Detail */
-            detail: string;
-            /** Created At */
-            created_at: string | null;
-        };
         /** Body_upload_document_api_upload_post */
         Body_upload_document_api_upload_post: {
             /** File */
@@ -736,19 +676,6 @@ export interface components {
             created_at?: string | null;
             /** Updated At */
             updated_at?: string | null;
-        };
-        /** CredentialOut */
-        CredentialOut: {
-            /** Id */
-            id: string;
-            /** Provider Name */
-            provider_name: string;
-            /** Bound Target Id */
-            bound_target_id: string | null;
-            /** Last Tested At */
-            last_tested_at: string | null;
-            /** Last Test Result */
-            last_test_result: string | null;
         };
         /** Credentials */
         Credentials: {
@@ -870,7 +797,10 @@ export interface components {
             /** Safety Scope */
             safety_scope: string | null;
         };
-        /** IntentNodePatch */
+        /**
+         * IntentNodePatch
+         * @description 意图节点部分更新；枚举字段由 pydantic 在边界校验（非法值 422 而非 500）。
+         */
         IntentNodePatch: {
             /** Name */
             name?: string | null;
@@ -881,11 +811,11 @@ export interface components {
             /** Enabled */
             enabled?: boolean | null;
             /** Safety Scope */
-            safety_scope?: string | null;
+            safety_scope?: ("treatment" | "urgent" | "prohibited") | null;
             /** Parent Id */
             parent_id?: string | null;
             /** Kind */
-            kind?: string | null;
+            kind?: ("knowledge" | "system") | null;
         };
         /** KnowledgeBaseIn */
         KnowledgeBaseIn: {
@@ -907,8 +837,6 @@ export interface components {
             description: string;
             /** Document Count */
             document_count: number;
-            /** Chunk Count */
-            chunk_count: number;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -929,8 +857,6 @@ export interface components {
             term: string;
             /** Intent Node Id */
             intent_node_id: string;
-            /** Enabled */
-            enabled: boolean;
             /** Created At */
             created_at?: string | null;
         };
@@ -953,40 +879,24 @@ export interface components {
             /** Circuit State */
             circuit_state: string;
         };
-        /** ModelTargetPatch */
-        ModelTargetPatch: {
-            /** Priority */
-            priority?: number | null;
-        };
-        /** SampleQuestionOut */
-        SampleQuestionOut: {
+        /**
+         * Role
+         * @description 工作区内的用户角色（规范定义：MEMBER 与 OPERATOR）。
+         * @enum {string}
+         */
+        Role: "member" | "operator";
+        /**
+         * SampleQuestionPublic
+         * @description 用户可见的样例问题公开字段（管理端字段如 enabled/created_at 不外泄）。
+         */
+        SampleQuestionPublic: {
             /** Id */
             id: string;
             /** Text */
             text: string;
-            /** Intent Node Id */
-            intent_node_id: string | null;
-            /** Enabled */
-            enabled: boolean;
-            /** Created At */
-            created_at: string | null;
-        };
-        /** StreamIn */
-        StreamIn: {
-            /** Question */
-            question: string;
-            /** Conversation Id */
-            conversation_id: string;
-            /**
-             * Analysis Depth
-             * @default false
-             */
-            analysis_depth: boolean;
         };
         /** TraceOut */
         TraceOut: {
-            /** Id */
-            id: string;
             /** Run Id */
             run_id: string;
             /** Conversation Id */
@@ -1041,12 +951,6 @@ export interface components {
             id: string;
             /** Email */
             email: string;
-            /** Role */
-            role: string;
-            /** Workspace Name */
-            workspace_name: string;
-            /** Status */
-            status: string;
             /** Created At */
             created_at: string | null;
         };
@@ -1059,6 +963,7 @@ export interface components {
              * Format: email
              */
             email: string;
+            role: components["schemas"]["Role"];
         };
     };
     responses: never;
@@ -1127,28 +1032,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    metrics_snapshot_api_metrics_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
         };
@@ -1261,39 +1144,6 @@ export interface operations {
             };
         };
     };
-    chat_stream_api_chat_stream_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StreamIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_conversations_api_conversations_get: {
         parameters: {
             query?: never;
@@ -1378,6 +1228,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sample_questions_api_sample_questions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleQuestionPublic"][];
                 };
             };
         };
@@ -1615,6 +1485,26 @@ export interface operations {
         };
     };
     trigger_orphan_scan_api_admin_maintenance_orphan_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    trigger_object_scan_api_admin_maintenance_object_scan_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1881,63 +1771,6 @@ export interface operations {
             };
         };
     };
-    update_model_target_api_admin_model_targets__target_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModelTargetPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_credentials_api_admin_credentials_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CredentialOut"][];
-                };
-            };
-        };
-    };
     list_traces_api_admin_traces_get: {
         parameters: {
             query?: never;
@@ -2025,46 +1858,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceOut"][];
-                };
-            };
-        };
-    };
-    list_audit_api_admin_audit_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuditOut"][];
-                };
-            };
-        };
-    };
-    list_sample_questions_api_admin_sample_questions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SampleQuestionOut"][];
                 };
             };
         };

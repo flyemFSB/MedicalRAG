@@ -1,17 +1,17 @@
 """MinerU Cloud API 客户端适配器（基于官方 v4 API 规范）。
 
 封装针对复杂医学文档（PDF / 扫描件）的版面分析与结构化 Markdown 提取任务：
-- POST /api/v4/extract/task —— 提交单文件（URL 形式）提取任务，获取 task_id；
-- GET /api/v4/extract/task/{task_id} —— 轮询任务执行状态；
 - POST /api/v4/file-urls/batch —— 申请预签名批量上传链接；
-- GET /api/v4/extract-results/batch/{batch_id} —— 获取批次解析结果并下载成果压缩包。
+- GET /api/v4/extract-results/batch/{batch_id} —— 获取批次解析状态并下载成果压缩包。
 
 失败时统一映射并抛出 ProviderUnavailableError；服务凭据仅通过环境或安全配置注入。
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx2 as httpx  # 全仓自有 HTTP 通信统一采用 httpx2（供应链基线）
 
@@ -25,15 +25,6 @@ class MinerUConfig:
     base_url: str
     token: str | None = None
     timeout_s: float = 60.0
-
-
-@dataclass(frozen=True, slots=True)
-class MinerUTask:
-    """单次文档解析任务的状态快照。"""
-
-    task_id: str
-    status: str
-    batch_id: str | None = None
 
 
 class MinerUClient:
@@ -50,47 +41,9 @@ class MinerUClient:
             headers={"Authorization": f"Bearer {config.token}"} if config.token else {},
         )
 
-    async def submit_url(
-        self,
-        url: str,
-        *,
-        model_version: str = "vlm",
-        is_ocr: bool = True,
-        enable_formula: bool = False,
-        enable_table: bool = True,
-        language: str = "ch",
-    ) -> str:
-        """提交单文件在线提取任务（通过短期有效的预签名 URL 访问文件），返回 task_id。"""
-        try:
-            response = await self._client.post(
-                "/api/v4/extract/task",
-                json={
-                    "url": url,
-                    "model_version": model_version,
-                    "is_ocr": is_ocr,
-                    "enable_formula": enable_formula,
-                    "enable_table": enable_table,
-                    "language": language,
-                },
-            )
-            response.raise_for_status()
-            return str(response.json()["task_id"])
-        except (httpx.HTTPError, KeyError, ValueError) as exc:
-            raise ProviderUnavailableError(type(exc).__name__) from exc
-
-    async def task_status(self, task_id: str) -> MinerUTask:
-        """轮询查询单任务的执行状态。"""
-        try:
-            response = await self._client.get(f"/api/v4/extract/task/{task_id}")
-            response.raise_for_status()
-            payload = response.json()
-            return MinerUTask(
-                task_id=task_id,
-                status=str(payload.get("task_status", payload.get("status", "unknown"))),
-                batch_id=str(payload["batch_id"]) if payload.get("batch_id") else None,
-            )
-        except (httpx.HTTPError, ValueError) as exc:
-            raise ProviderUnavailableError(type(exc).__name__) from exc
+    async def aclose(self) -> None:
+        """释放底层 HTTP 连接池（组合根停机时调用）。"""
+        await self._client.aclose()
 
     async def request_file_upload(self, filename: str) -> tuple[str, str]:
         """申请文件预签名批量上传链接（POST /api/v4/file-urls/batch），返回 (batch_id, upload_url) 元组。"""
@@ -131,8 +84,8 @@ class MinerUClient:
             return "done"
         return "pending"
 
-    async def download_results(self, batch_id: str) -> bytes:
-        """下载批次解析成果归档压缩包（ZIP 格式字节流）。"""
+    async def download_results_to(self, batch_id: str, dest: Path | str) -> None:
+        """流式下载批次解析成果归档压缩包（ZIP）至指定文件路径，不整包载入内存。"""
         try:
             response = await self._client.get(f"/api/v4/extract-results/batch/{batch_id}")
             response.raise_for_status()
@@ -144,8 +97,14 @@ class MinerUClient:
         if not zip_url:
             raise ProviderUnavailableError("missing_full_zip_url")
         try:
-            artifact = await self._client.get(zip_url)
-            artifact.raise_for_status()
+            # client.stream 边收边写：成果包体积不受限于进程内存（磁盘写入经线程池隔离）
+            async with self._client.stream("GET", zip_url) as response:
+                response.raise_for_status()
+                target = await asyncio.to_thread(open, dest, "wb")
+                try:
+                    async for chunk in response.aiter_bytes():
+                        await asyncio.to_thread(target.write, chunk)
+                finally:
+                    await asyncio.to_thread(target.close)
         except httpx.HTTPError as exc:
             raise ProviderUnavailableError(type(exc).__name__) from exc
-        return artifact.content

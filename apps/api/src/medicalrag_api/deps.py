@@ -4,19 +4,19 @@
 - ``ensure_workspace`` —— 在用户注册或登录时确保个人工作区与成员资格初始化完成（唯一写点）；
 - ``require_operator`` —— 校验当前用户具备平台管理员权限（在 OPERATOR_EMAILS 名单内），方可访问运营管理后台端点。
 
-v1 阶段以「个人工作区」作为多租户数据隔离载体；工作区创建与角色提权仅在认证事件（register/login）中触发，
+v1 阶段以「个人工作区」作为多工作区数据隔离载体；工作区创建与角色提权仅在认证事件（register/login）中触发，
 普通读请求路径实现零写库：有效杜绝每请求写放大与并发首次登录时的竞态问题。
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 
 from medicalrag_core.identity.workspace import Role, Workspace, WorkspaceMember
+from medicalrag_core.ids import uuid7
 from medicalrag_infra.persistence.operator import OperatorRepositories
 
 from .settings import session_cookie_name
@@ -46,11 +46,13 @@ async def ensure_workspace(
         workspace_id = memberships.workspaces()[0]
         current = memberships.is_platform_operator()
         if desired_role is Role.OPERATOR and not current:
-            await repos.memberships.add(
-                WorkspaceMember(user_id=user_id, workspace_id=workspace_id, role=Role.OPERATOR)
-            )
+            # 已是成员：原地提权（INSERT 会撞 uq_workspace_member 唯一约束把登录打成 500）
+            await repos.memberships.set_role(user_id, workspace_id, Role.OPERATOR)
+        elif desired_role is Role.MEMBER and current:
+            # 名单移除即降权：避免邮箱移出 OPERATOR_EMAILS 后 DB 记录仍保留 operator 角色
+            await repos.memberships.set_role(user_id, workspace_id, Role.MEMBER)
         return workspace_id, desired_role
-    workspace = Workspace(id=str(uuid.uuid7()), name=email)
+    workspace = Workspace(id=str(uuid7()), name=email)
     await repos.workspaces.create(workspace)
     await repos.memberships.add(
         WorkspaceMember(user_id=user_id, workspace_id=workspace.id, role=desired_role)
@@ -62,10 +64,10 @@ async def current_user(request: Request) -> UserContext:
     """提取并校验当前请求的会话 Cookie，解析用户上下文。"""
     settings = request.app.state.settings
     token = request.cookies.get(session_cookie_name(settings.cookie_secure))
-    user_id = await request.app.state.sessions.validate(token) if token is not None else None
+    user_id = await request.app.state.sessions.load(token) if token is not None else None
     if user_id is None:
         raise HTTPException(status_code=401, detail="未登录")
-    user = await request.app.state.identity.get_user(user_id)
+    user = await request.app.state.users.get_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="未登录")
     repos: OperatorRepositories = request.app.state.operator

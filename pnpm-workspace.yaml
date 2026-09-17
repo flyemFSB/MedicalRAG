@@ -9,3 +9,6 @@ minimumReleaseAgeExclude:
   - assistant-cloud@0.1.38
   - assistant-stream@0.3.33
   - safe-content-frame@0.0.26
+  - react-dom@19.3.0
+  - react@19.3.0
+  - scheduler@0.28.0

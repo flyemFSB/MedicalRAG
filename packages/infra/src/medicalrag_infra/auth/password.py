@@ -19,6 +19,6 @@ class Argon2PasswordHasher:
     def verify(self, password: str, encoded: str) -> bool:
         try:
             return self._hasher.verify(encoded, password)
-        except VerificationError, ValueError:
+        except (VerificationError, ValueError):
             # 无论是密码不匹配（VerificationError）还是哈希格式损坏（ValueError），均模糊处理并返回 False
             return False

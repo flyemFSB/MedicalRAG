@@ -1,11 +1,12 @@
 """PostgreSQL 业务数据模型定义（规范数据模型；所有业务实体主键均采用 uuid7）。
 
-定义聊天运行、操作审计、会话消息、知识库文档与系统配置相关的持久化模型；
+定义聊天运行、会话消息、知识库文档与系统配置相关的持久化模型；
 ChatRun 为业务事实的唯一真相来源，外部观测追踪系统仅通过关联标识对接，数据库内不冗余存储完整追踪调用树。
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -14,20 +15,49 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from medicalrag_core.ids import uuid7
+
 
 def _utcnow() -> datetime:
-    return datetime.now(UTC)
+    """UTC 时间戳，且在同一进程内**严格单调递增**。
+
+    本地时钟粒度可能使连续插入取到同一时刻（Windows 尤其明显），而 uuid7 的低位是随机数，
+    所以时间并列时排序会退化为随机 —— 会话消息顺序会错乱（记忆窗口按时间正序读取）。
+    这里把时间戳拨到至少比上次大 1 微秒，保证“插入顺序 == 时间顺序”。
+    """
+    global _last_timestamp
+    now = time.time()
+    if now <= _last_timestamp:
+        now = _last_timestamp + 1e-6
+    _last_timestamp = now
+    return datetime.fromtimestamp(now, tz=UTC)
+
+
+_last_timestamp = 0.0
+
+
+def _iso(value: datetime | None) -> str | None:
+    """行时间戳 → ISO 字符串（领域实体的 ``created_at``/``updated_at`` 形态）。"""
+    return str(value) if value is not None else None
 
 
 class Base(DeclarativeBase):
+    """声明式基类。
+
+    未引入 naming_convention：库里已有 8 个 revision 创建的约束使用 PG 默认名，
+    改成命名规范要求对全部约束写重命名迁移，收益仅是可读性，不做（YAGNI）。
+    """
+
     pass
 
 
@@ -36,7 +66,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -46,13 +76,27 @@ class ChatRun(Base):
     """单次聊天运行记录：维护状态、最终结果、生效策略版本及观测链路追踪关联键。"""
 
     __tablename__ = "chat_runs"
+    # 聊天幂等：同一会话同时至多一条非终态 Run（并发重复提交在数据库层面直接拒绝）
+    __table_args__ = (
+        Index(
+            "uq_chat_runs_running",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("status NOT IN ('completed', 'cancelled', 'failed')"),
+            sqlite_where=text("status NOT IN ('completed', 'cancelled', 'failed')"),
+        ),
+    )
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     outcome: Mapped[str | None] = mapped_column(String(32))
+    # 用户原始问题（运营追踪页展示；回答文本存 assistant_message）
+    question: Mapped[str | None] = mapped_column(Text)
+    # 命中的证据集合（JSON 数组，Evidence.to_payload 结构；供溯源与反馈质量分析）
+    evidence: Mapped[list | None] = mapped_column(JSON)
     assistant_message: Mapped[str | None] = mapped_column(Text)
     retrieval_policy_version: Mapped[int | None] = mapped_column(Integer)
     # 链路追踪关联键：Aegra thread_id（映射至 Phoenix session_id）
@@ -66,7 +110,7 @@ class RunEvent(Base):
 
     __tablename__ = "run_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("chat_runs.id"), nullable=False, index=True
     )
@@ -79,7 +123,7 @@ class Message(Base):
 
     __tablename__ = "messages"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
@@ -104,7 +148,6 @@ class IntentNodeRow(Base):
     parent_id: Mapped[str | None] = mapped_column(String(128))
     examples: Mapped[list] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    prompt_snippet: Mapped[str | None] = mapped_column(Text)
     prompt_template: Mapped[str | None] = mapped_column(Text)
     safety_class: Mapped[str] = mapped_column(String(16), default="general")
 
@@ -118,7 +161,7 @@ class IngestionRun(Base):
 
     __tablename__ = "ingestion_runs"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     document_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -135,7 +178,7 @@ class IngestionRunStage(Base):
     __tablename__ = "ingestion_run_stages"
     __table_args__ = (UniqueConstraint("run_id", "stage", name="uq_ingestion_run_stage"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("ingestion_runs.id"), nullable=False, index=True
     )
@@ -144,11 +187,11 @@ class IngestionRunStage(Base):
 
 
 class WorkspaceRow(Base):
-    """工作区实体（多租户/项目成员共享资源的物理隔离边界）。"""
+    """工作区实体（成员共享资源的物理隔离边界）。"""
 
     __tablename__ = "workspaces"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -159,7 +202,7 @@ class WorkspaceMemberRow(Base):
     __tablename__ = "workspace_members"
     __table_args__ = (UniqueConstraint("user_id", "workspace_id", name="uq_workspace_member"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("workspaces.id"), nullable=False, index=True
@@ -173,7 +216,7 @@ class KnowledgeBaseRow(Base):
 
     __tablename__ = "knowledge_bases"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
@@ -188,7 +231,7 @@ class DocumentRow(Base):
 
     __tablename__ = "documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     knowledge_base_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -202,11 +245,11 @@ class DocumentRow(Base):
 
 
 class ChunkRow(Base):
-    """文档切片元数据与正文记录表（向量存储于 Qdrant 向量数据库中）。"""
+    """文档分块元数据与正文记录表（向量存储于 Qdrant 集合中）。"""
 
     __tablename__ = "chunks"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     document_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -223,11 +266,13 @@ class ConversationRow(Base):
 
     __tablename__ = "conversations"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="新会话")
     summary: Mapped[str | None] = mapped_column(Text)
+    # 记忆摘要水位：已被摘要覆盖的消息条数（与最近窗口配合做增量压缩）
+    summary_offset: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     thread_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -240,7 +285,7 @@ class FeedbackRow(Base):
 
     __tablename__ = "feedback"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
@@ -255,7 +300,7 @@ class ModelTargetRow(Base):
 
     __tablename__ = "model_targets"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -263,51 +308,33 @@ class ModelTargetRow(Base):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     circuit_state: Mapped[str] = mapped_column(String(16), nullable=False, default="closed")
     failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class PlatformCredentialRow(Base):
-    """平台级模型服务商凭据记录表（由系统操作员统一管理，严禁作为普通工作区数据暴露）。"""
-
-    __tablename__ = "platform_credentials"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
-    provider_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    bound_target_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
-    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_test_result: Mapped[str | None] = mapped_column(String(16))
+    # 熔断开启时间：冷却到期后路由器将其翻转 HALF_OPEN 放行探测请求
+    circuit_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class OutboxRow(Base):
-    """事务性 Outbox 事件表（建立部分索引 (created_at) WHERE processed_at IS NULL）。"""
+    """事务性 Outbox 事件表（部分索引 ix_outbox_unprocessed 服务 relay 轮询）。"""
 
     __tablename__ = "outbox"
+    __table_args__ = (
+        Index(
+            "ix_outbox_unprocessed",
+            "created_at",
+            postgresql_where=text("processed_at IS NULL"),
+        ),
+    )
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
     aggregate_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 领取租约：relay 领取时打标，崩溃后租约过期自动重投（at-least-once）
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
-
-
-class AuditEventRow(Base):
-    """操作审计事件记录表（管理后台审计功能；敏感内容严禁进入审计明细）。"""
-
-    __tablename__ = "audit_events"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
-    actor_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
-    actor_email: Mapped[str] = mapped_column(String(320), nullable=False)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
-    action: Mapped[str] = mapped_column(String(64), nullable=False)
-    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    entity_name: Mapped[str] = mapped_column(String(512), nullable=False)
-    detail: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class SampleQuestionRow(Base):
@@ -315,11 +342,10 @@ class SampleQuestionRow(Base):
 
     __tablename__ = "sample_questions"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
     text: Mapped[str] = mapped_column(String(512), nullable=False)
     intent_node_id: Mapped[str | None] = mapped_column(String(128))
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -328,8 +354,7 @@ class QueryTermMappingRow(Base):
 
     __tablename__ = "query_term_mappings"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     term: Mapped[str] = mapped_column(String(128), nullable=False)
     intent_node_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

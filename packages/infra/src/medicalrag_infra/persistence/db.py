@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -16,9 +17,35 @@ from sqlalchemy.ext.asyncio import (
 
 
 def create_engine_and_session_factory(
-    url: str, *, echo: bool = False
+    url: str,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
-    """创建异步数据库引擎与会话工厂；返回 (engine, session_factory) 元组，组合根负责在关闭时清理 engine。"""
-    engine = create_async_engine(url, echo=echo, pool_pre_ping=True)
+    """创建异步数据库引擎与会话工厂；返回 (engine, session_factory) 元组，组合根负责在关闭时清理 engine。
+
+    SQLite（测试/本地）不适用池参数，并强制开启外键约束——
+    SQLite 默认不强制 FK，关闭该 pragma 会让级联删除等约束缺陷在测试中假绿。
+    """
+    is_sqlite = url.startswith("sqlite")
+    engine = create_async_engine(
+        url,
+        pool_pre_ping=True,
+        **(
+            {}
+            if is_sqlite
+            else {
+                "pool_size": 5,
+                "max_overflow": 10,
+                "pool_timeout": 30,
+                "pool_recycle": 1800,
+            }
+        ),
+    )
+    if is_sqlite:
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     return engine, session_factory

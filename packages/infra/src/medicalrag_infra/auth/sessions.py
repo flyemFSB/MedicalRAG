@@ -11,12 +11,22 @@ import time
 from redis.asyncio import Redis
 
 
+def session_cookie_name(secure: bool) -> str:
+    """会话 Cookie 名称（API 与 Agent 认证处理器共享同一契约，避免双份字面量漂移）。
+
+    __Host- 前缀强制要求 Secure 属性，仅在 HTTPS 生产环境中可用；
+    本地 HTTP 开发调试环境（cookie_secure=False）使用普通名称，
+    避免浏览器直接丢弃未加密的会话 Cookie。
+    """
+    return "__Host-SessionID" if secure else "MedicalRAG-SessionID"
+
+
 class RedisSessionStore:
     """实现 SessionStore 协议端口；会话 TTL 依托 Redis Key 的原生过期机制保障。"""
 
-    def __init__(self, client: Redis, *, prefix: str = "session:") -> None:
+    def __init__(self, client: Redis) -> None:
         self._client = client
-        self._prefix = prefix
+        self._prefix = "session:"
 
     def _key(self, token: str) -> str:
         return f"{self._prefix}{token}"

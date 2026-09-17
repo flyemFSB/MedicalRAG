@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import uuid
-
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from medicalrag_core.feedback import Feedback, FeedbackValue
+from medicalrag_core.ids import uuid7
+from medicalrag_core.records import Feedback, FeedbackValue
 
 from ..deps import UserCtx
 
@@ -23,10 +22,16 @@ class FeedbackIn(BaseModel):
 
 @router.post("", status_code=201)
 async def submit_feedback(body: FeedbackIn, ctx: UserCtx, request: Request) -> dict[str, str]:
-    """提交针对单条助手回答的用户反馈（赞同/反对及可选的文字说明）。"""
-    await request.app.state.operator.feedback.submit(
+    """提交针对单条助手回答的用户反馈（赞同/反对及可选的文字说明）。
+
+    必须校验会话归属：否则任意用户可对他人会话写入反馈（对象级越权写，OWASP API1）。
+    """
+    operator = request.app.state.operator
+    if not await operator.conversations.owned_by(body.conversation_id, ctx.user_id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+    await operator.feedback.submit(
         Feedback(
-            id=str(uuid.uuid7()),
+            id=str(uuid7()),
             message_id=body.message_id,
             conversation_id=body.conversation_id,
             user_id=ctx.user_id,

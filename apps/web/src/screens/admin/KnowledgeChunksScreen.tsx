@@ -1,10 +1,11 @@
 // 分块管理（CONTEXT.md：可独立索引与引证的结构感知片段；来源元数据 = 页面引用 + 标题链）。
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Ban, Boxes, ChevronRight, Pencil } from "lucide-react";
-import { renderAsync } from "docx-preview";
+import { Boxes, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { AdminPageHeader } from "../../components/admin-page-header";
 import { Badge } from "../../components/ui/badge";
+import { badgeSem } from "../../lib/status";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -12,17 +13,19 @@ import { DataTable } from "../../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { AppTableFeatures } from "../../lib/table";
 import type { Chunk } from "../../lib/types";
-import { chunksQueryOptions, documentsQueryOptions, knowledgeBasesQueryOptions } from "../../lib/queries";
+import {
+  chunksQueryOptions,
+  documentsQueryOptions,
+  knowledgeBasesQueryOptions,
+} from "../../lib/queries";
 import { formatDateTime } from "../../lib/format";
 
-export const Route = createFileRoute("/admin/knowledge/$kbId/docs/$docId")({
-  component: KnowledgeChunksScreen,
-});
+const Route = createFileRoute("/admin/knowledge/$kbId/docs/$docId")({});
 
 export function KnowledgeChunksScreen() {
   const { docId, kbId } = Route.useParams();
   const navigate = useNavigate();
-  const { data: chunks = [], isPending } = useQuery(chunksQueryOptions(docId));
+  const { data: chunks = [], isError, isPending, refetch } = useQuery(chunksQueryOptions(docId));
   // 分块端点不携带文档/知识库名称，从相邻列表查询联表取展示名（同缓存，零额外请求）。
   const { data: docs = [] } = useQuery(documentsQueryOptions(kbId));
   const { data: kbs = [] } = useQuery(knowledgeBasesQueryOptions());
@@ -41,25 +44,47 @@ export function KnowledgeChunksScreen() {
             <div>
               {chunk.pageRef || chunk.headings?.length ? (
                 <div className="mb-1 flex flex-wrap gap-1">
-                  {chunk.headings?.map((h) => <Badge key={h} variant="neutral">{h}</Badge>)}
-                  {chunk.pageRef ? <Badge variant="neutral">{chunk.pageRef}</Badge> : null}
+                  {chunk.headings?.map((h) => (
+                    <Badge key={h} {...badgeSem("neutral")}>
+                      {h}
+                    </Badge>
+                  ))}
+                  {chunk.pageRef ? <Badge {...badgeSem("neutral")}>{chunk.pageRef}</Badge> : null}
                 </div>
               ) : null}
-              <span className="font-medium text-ink">{chunk.content}</span>
+              <span className="line-clamp-3 font-medium text-ink" title={chunk.content}>
+                {chunk.content}
+              </span>
             </div>
           );
         },
       },
-      { accessorKey: "tokenCount", header: "Token", cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span> },
-      { accessorKey: "createdAt", header: "更新时间", cell: (info) => <span className="whitespace-nowrap">{formatDateTime(info.getValue<string>())}</span> },
+      {
+        accessorKey: "tokenCount",
+        header: "Token",
+        cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span>,
+      },
+      {
+        accessorKey: "createdAt",
+        header: "更新时间",
+        cell: (info) => (
+          <span className="whitespace-nowrap">{formatDateTime(info.getValue<string>())}</span>
+        ),
+      },
     ],
     [],
   );
 
   return (
     <div>
-      <nav aria-label="面包屑" className="mb-3 flex items-center gap-1.5 text-caption text-muted-foreground">
-        <Link to="/admin/knowledge" className="rounded-sm font-medium text-accent-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+      <nav
+        aria-label="面包屑"
+        className="mb-3 flex items-center gap-1.5 text-caption text-muted-foreground"
+      >
+        <Link
+          to="/admin/knowledge"
+          className="rounded-sm font-medium text-accent-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
           知识库管理
         </Link>
         <ChevronRight className="size-3.5" aria-hidden />
@@ -73,60 +98,49 @@ export function KnowledgeChunksScreen() {
         <ChevronRight className="size-3.5" aria-hidden />
         <span className="min-w-0 truncate text-ink">{docTitle ?? "文档分块"}</span>
       </nav>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-panel text-muted-foreground">
-            <Boxes className="size-4" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-heading-lg font-semibold text-ink">分块管理</h1>
-            <p className="mt-1 max-w-[60ch] text-body-sm text-muted-foreground">
-              {docTitle ? `${docTitle}（知识库: ${kbName ?? "—"}）` : "文档分块"}
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="secondary" onClick={() => navigate({ to: "/admin/knowledge/$kbId", params: { kbId } })}>
-            返回文档
-          </Button>
-          <Button variant="secondary" onClick={() => setShowPreview((v) => !v)}>
-            {showPreview ? "隐藏预览" : "预览文档"}
-          </Button>
-          <Button disabled title="该操作待后端接入后可用">新建分块</Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        icon={Boxes}
+        title="分块管理"
+        description={docTitle ? `${docTitle}（知识库: ${kbName ?? "—"}）` : "文档分块"}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => navigate({ to: "/admin/knowledge/$kbId", params: { kbId } })}
+            >
+              返回文档
+            </Button>
+            <Button variant="secondary" onClick={() => setShowPreview((v) => !v)}>
+              {showPreview ? "隐藏预览" : "预览文档"}
+            </Button>
+          </>
+        }
+      />
 
       {showPreview && docTitle ? (
         <Card className="mb-4">
           <CardContent className="py-5">
-            <DocumentPreview documentId={docId} format={docs.find((d) => d.id === docId)?.format ?? ""} title={docTitle} />
+            <DocumentPreview
+              documentId={docId}
+              format={docs.find((d) => d.id === docId)?.format ?? ""}
+              title={docTitle}
+            />
           </CardContent>
         </Card>
       ) : null}
 
       <div className="mb-3 flex items-center gap-3">
         <span className="text-caption text-muted-foreground">共 {chunks.length} 个分块</span>
-        <div className="ml-auto" />
-        <Button variant="ghost" size="sm" disabled title="该操作待后端接入后可用">批量启用</Button>
-        <Button variant="ghost" size="sm" disabled title="该操作待后端接入后可用">批量禁用</Button>
       </div>
       <DataTable
         ariaLabel="分块列表"
         columns={columns}
         data={chunks}
         loading={isPending}
+        error={isError}
+        onRetry={() => void refetch()}
         emptyTitle="暂无分块"
         emptyDescription="文档完成摄取后，分块会显示在这里，并作为回答的证据来源。"
-        renderRowActions={() => (
-          <>
-            <Button variant="ghost" size="icon" aria-label="编辑分块" disabled title="该操作待后端接入后可用">
-              <Pencil />
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="禁用分块" disabled title="该操作待后端接入后可用">
-              <Ban />
-            </Button>
-          </>
-        )}
       />
     </div>
   );
@@ -209,7 +223,9 @@ function DocumentPreview({
               {text}
             </pre>
           ) : null}
-          {imageUrl ? <img src={imageUrl} alt={title} className="max-h-96 max-w-full rounded-md" /> : null}
+          {imageUrl ? (
+            <img src={imageUrl} alt={title} className="max-h-96 max-w-full rounded-md" />
+          ) : null}
         </>
       )}
     </div>
@@ -255,6 +271,9 @@ async function renderDocx(
   setStatus: (s: "loading" | "ready" | "error") => void,
 ): Promise<void> {
   const blob = await response.blob();
-  if (ref.current) await renderAsync(blob, ref.current);
+  if (ref.current) {
+    const { renderAsync } = await import("docx-preview");
+    await renderAsync(blob, ref.current);
+  }
   setStatus("ready");
 }

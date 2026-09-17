@@ -9,12 +9,17 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from medicalrag_core.chat.model import ChatRequest, ChatResult
 from medicalrag_core.chat.run_state import ChatRunState
 
 from .models import ChatRun, RunEvent
+
+
+class ConversationBusyError(RuntimeError):
+    """同一会话已有进行中的聊天 Run（并发重复提交被唯一约束拒绝）。"""
 
 
 class SqlRunRepository:
@@ -31,9 +36,14 @@ class SqlRunRepository:
                 user_id=uuid.UUID(request.user_id),
                 workspace_id=uuid.UUID(request.workspace_id),
                 status=ChatRunState.ACCEPTED.value,
+                question=request.question,
             )
             session.add(run)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                # 聊天幂等：同一会话已存在非终态 Run（并发重复提交），数据库唯一约束直接拒绝
+                raise ConversationBusyError(request.conversation_id) from exc
             return str(run.id)
 
     async def record_state(self, run_id: str, state: ChatRunState) -> None:
@@ -47,7 +57,7 @@ class SqlRunRepository:
             await session.commit()
 
     async def complete(self, run_id: str, result: ChatResult) -> None:
-        """完成聊天运行：记录最终回复内容、执行结果类型、策略版本及链路追踪标识，并标记完成时间。"""
+        """完成聊天运行：记录最终回复内容、命中证据、执行结果类型、策略版本及链路追踪标识，并标记完成时间。"""
         async with self._sessions() as session:
             run = await session.get(ChatRun, uuid.UUID(run_id))
             if run is None:
@@ -55,6 +65,7 @@ class SqlRunRepository:
             run.status = ChatRunState.COMPLETED.value
             run.outcome = result.outcome.value
             run.assistant_message = result.message
+            run.evidence = [e.to_payload() for e in result.evidence]
             run.retrieval_policy_version = result.retrieval_policy_version
             run.trace_id = result.trace_id
             run.completed_at = datetime.now(UTC)

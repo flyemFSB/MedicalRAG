@@ -1,12 +1,18 @@
-"""应用核心配置项定义（基于 pydantic-settings 实现；开发规范 §5：启动阶段执行 fail-fast 校验）。
+"""应用核心配置项定义（基于 pydantic-settings 实现；字段约束在构造期即执行 fail-fast 校验）。
 
 环境变量统一使用 `MEDICALRAG_` 前缀；数据库连接地址为必填项（缺失则立即阻断启动）。
 所有敏感凭据仅允许通过环境变量或安全密钥管理器注入，严禁硬编码至代码库中。
+生产聊天经由 Aegra 运行时（apps/agent）装配模型与检索 Provider，本服务不持有相关配置。
 """
 
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from medicalrag_infra.auth.sessions import session_cookie_name
+
+__all__ = ["Settings", "session_cookie_name"]
 
 
 class Settings(BaseSettings):
@@ -19,38 +25,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # __Host- Cookie 必须附带 Secure 属性；本地 HTTP 开发调试可置为 False
     cookie_secure: bool = True
-    # 外部大语言模型提供商配置；API 密钥通过环境变量注入
-    llm_base_url: str = "https://api.openai.com"
-    llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-    # 外部重排模型配置：留空表示不启用外部重排（直接依据多路融合得分调序）
-    rerank_model: str = ""
-    # Qdrant 向量检索服务配置（迁移至 Qdrant；单容器部署）
+    # Qdrant 向量检索服务地址（/ready 就绪探针检测其连通性；检索本身由 apps/agent 承担）
     qdrant_url: str = "http://localhost:6333"
-    qdrant_collection: str = "medical_chunks_v1"
-    qdrant_embedding_dim: int = 1536
-    # 证据检索控制策略（版本化管理）
-    retrieval_policy_version: int = 1
-    retrieval_context_cap: int = 8
     # 平台管理员邮箱列表（逗号分隔）；命中邮箱在登录时自动赋予运营控制台权限
     operator_emails: str = ""
-    # 速率限制配置（规范用户故事 28）：在线聊天按每用户每分钟配额限制；登录按来源 IP 防暴力破解
-    chat_rate_limit: int = 30
-    chat_rate_window_s: int = 60
-    auth_rate_limit: int = 10
-    auth_rate_window_s: int = 60
+    # 速率限制配置（规范用户故事 28）：登录按来源 IP 防暴力破解
+    auth_rate_limit: int = Field(default=10, ge=1)
+    auth_rate_window_s: int = Field(default=60, ge=1)
     # 本地文件系统对象存储根路径（v1 默认实现；遵循 ObjectStorage 协议端口）
     object_root: str = "./objects"
 
     @property
     def operator_email_set(self) -> frozenset[str]:
         return frozenset(e.strip().lower() for e in self.operator_emails.split(",") if e.strip())
-
-
-def session_cookie_name(secure: bool) -> str:
-    """获取会话 Cookie 名称（遵循安全 Cookie 规范）。
-
-    __Host- 前缀强制要求 Secure 属性，仅在 HTTPS 生产环境中可用；
-    本地 HTTP 开发调试环境（cookie_secure=False）使用普通名称，避免浏览器直接丢弃未加密的会话 Cookie。
-    """
-    return "__Host-SessionID" if secure else "MedicalRAG-SessionID"

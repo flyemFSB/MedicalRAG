@@ -110,7 +110,8 @@ async def test_retrieve_uses_prefetch_and_rrf():
     assert call["prefetch"][1].query.indices == [3, 7]
     assert call["prefetch"][1].query.values == [0.9, 0.4]
     # RRF query
-    assert call["query"].rrf.k == 60
+    # RRF 常数：61 ≡ 论文 1/(rank+60)（Qdrant 名次从 0 起算）
+    assert call["query"].rrf.k == 61
     # Filter
     query_filter = call["query_filter"]
     assert len(query_filter.must) == 2
@@ -118,15 +119,15 @@ async def test_retrieve_uses_prefetch_and_rrf():
     assert embeddings.calls == [["疾病信息 疾病基本信息"]]
 
 
-async def test_retrieve_prefers_rewritten_question_and_slots():
-    # ADR 0036：查询主体是重写后的问题，槽位 Medical Entity 附加。
+async def test_retrieve_prefers_rewritten_question():
+    # ADR 0036：查询主体是重写后的问题。
     node = _query().node
-    query = IntentQuery(node, {"drug": "阿司匹林"}, rewritten_question="阿司匹林的用法用量")
+    query = IntentQuery(node, rewritten_question="阿司匹林的用法用量")
     embeddings = FakeEmbeddings()
     await QdrantRetriever(
         FakeQdrantClient(), embeddings, collection="med_v1", sparse_model=FakeSparseModel()
     ).retrieve(_request(), (query,))
-    assert embeddings.calls == [["阿司匹林的用法用量 阿司匹林"]]
+    assert embeddings.calls == [["阿司匹林的用法用量"]]
 
 
 async def test_retrieve_dedupes_identical_query_texts():
@@ -140,3 +141,41 @@ async def test_retrieve_dedupes_identical_query_texts():
         FakeQdrantClient(), embeddings, collection="med_v1", sparse_model=FakeSparseModel()
     ).retrieve(_request(), queries)
     assert len(embeddings.calls) == 1
+
+
+async def test_real_in_memory_qdrant_indexing_and_retrieval_smoke():
+    """真实 Qdrant 内存引擎链路冒烟：双路混合索引、可见性过滤与 RRF 倒数秩融合端到端验证。"""
+    from qdrant_client import QdrantClient
+
+    from medicalrag_core.chunking.chunking import Chunk
+    from medicalrag_infra.retrieval.indexer import QdrantIndexer
+    from medicalrag_infra.retrieval.schema import ensure_collection
+
+    client = QdrantClient(":memory:")
+    collection_name = "test_smoke_med"
+    dim = 64
+    ensure_collection(client, collection_name, embedding_dim=dim)
+
+    class FixedEmbeddings:
+        async def embed(self, texts):
+            return [[0.1] * dim for _ in texts]
+
+    emb = FixedEmbeddings()
+    indexer = QdrantIndexer(client, emb, collection=collection_name)
+    retriever = QdrantRetriever(client, emb, collection=collection_name)
+
+    chunks = [
+        Chunk(document_id="doc-1", text="高血压的降压诊断标准", heading_path=("心血管",), index=0),
+        Chunk(document_id="doc-1", text="糖尿病的饮食健康管理", heading_path=("内分泌",), index=1),
+    ]
+    await indexer.index("doc-1", "ws-1", chunks, title="诊疗指南", source_id="src-1")
+    await indexer.set_eligibility("doc-1", True)
+
+    query = IntentQuery(_query().node, rewritten_question="高血压的诊断标准")
+    candidates = await retriever.retrieve(_request(), (query,))
+
+    assert len(candidates) == 2
+    assert candidates[0].chunk_id == "doc-1:0"
+    assert candidates[0].title == "诊疗指南"
+    assert "高血压" in candidates[0].snippet
+    assert candidates[0].score > candidates[1].score

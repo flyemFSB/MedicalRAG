@@ -1,66 +1,71 @@
-"""轻量进程内度量指标注册表（开发规范 §3：结构化日志 + 指标 + 健康检查）。
+"""进程内度量指标（prometheus_client 薄封装）。
 
-提供无锁的内存计数器（Counter）、量规（Gauge）及延迟分位数统计（P50/P95），
-支持以 JSON 格式输出快照供调试界面使用，并支持渲染标准 OpenMetrics / Prometheus 抓取文本（/metrics 端点）。
-所有指标名称与标签均严格遵循脱敏白名单约束。
+- 计数：官方 Counter
+- 延迟：官方 Histogram（分位数由 Prometheus `histogram_quantile` 侧聚合，应用内不另存样本）
+- 文本：`generate_latest`；指标名不得携带业务正文
 """
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 
 
-@dataclass
+def _metric_name(name: str) -> str:
+    """校验 Prometheus 指标名（字母/数字/下划线/冒号，不能以数字开头）。
+
+    prometheus_client 对非法名不会报错，会静默改写（`9bad` → `_bad_total`），
+    因此这里必须显式校验，否则指标名写错后线上静默丢指标。
+    """
+    if not name:
+        raise ValueError("metric name must be non-empty")
+    if not (name[0].isalpha() or name[0] == "_"):
+        raise ValueError(f"invalid metric name: {name!r}")
+    if not all(c.isalnum() or c in "_:" for c in name):
+        raise ValueError(f"invalid metric name: {name!r}")
+    return name
+
+
 class Metrics:
-    """轻量进程内度量指标注册表。"""
+    """进程内指标注册表（每实例独立 CollectorRegistry，便于单测）。"""
 
-    counters: Counter[str] = field(default_factory=Counter)
-    gauges: dict[str, float] = field(default_factory=dict)
-    _latency: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
+    def __init__(self) -> None:
+        self._registry = CollectorRegistry()
+        self._counters: dict[str, Counter] = {}
+        self._histograms: dict[str, Histogram] = {}
+
+    def _counter(self, name: str) -> Counter:
+        metric = self._counters.get(name)
+        if metric is None:
+            # Counter 自动处理 _total 后缀（'x_total' → 样本 x_total；'x' → 样本 x_total）
+            metric = Counter(
+                name,
+                f"{name} total",
+                registry=self._registry,
+            )
+            self._counters[name] = metric
+        return metric
+
+    def _histogram(self, name: str) -> Histogram:
+        metric = self._histograms.get(name)
+        if metric is None:
+            metric = Histogram(
+                name,
+                f"{name} observations",
+                registry=self._registry,
+                # 覆盖毫秒级延迟常见范围
+                buckets=(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, float("inf")),
+            )
+            self._histograms[name] = metric
+        return metric
 
     def inc(self, name: str, *, by: int = 1) -> None:
-        """递增指定计数器（例如 chat_requests_total 或 provider_failures_total）。"""
-        self.counters[name] += by
+        """递增计数器（如 chat_requests_total）。"""
+        self._counter(_metric_name(name)).inc(by)
 
     def observe(self, name: str, value: float) -> None:
-        """记录一次样本观测值（如 run_latency_ms 耗时毫秒数），供 P50 与 P95 统计汇总。"""
-        self._latency[name].append(value)
-
-    def percentile(self, name: str, q: float) -> float:
-        """计算指定指标的百分位数（q 取值 0-100）。"""
-        samples = self._latency.get(name, [])
-        if not samples:
-            return 0.0
-        ordered = sorted(samples)
-        index = min(len(ordered) - 1, round(q / 100 * (len(ordered) - 1)))
-        return round(ordered[index], 1)
-
-    def snapshot(self) -> dict[str, object]:
-        """导出当前指标快照字典（脱敏：仅包含指标名与数值，严禁携带任何业务正文）。"""
-        return {
-            "counters": dict(self.counters),
-            "gauges": dict(self.gauges),
-            "latency_ms": {
-                name: {"p50": self.percentile(name, 50), "p95": self.percentile(name, 95)}
-                for name in self._latency
-            },
-        }
+        """记录一次延迟观测（如 run_latency_ms）；分位数由 Prometheus 侧从直方图桶计算。"""
+        self._histogram(_metric_name(name)).observe(value)
 
     def render_prometheus(self) -> str:
-        """渲染为标准 Prometheus OpenMetrics v0.0.4 文本格式：支持 counter、gauge 及 summary 分位数展示。"""
-        lines: list[str] = []
-        for name, value in sorted(self.counters.items()):
-            lines += [f"# TYPE {name} counter", f"{name} {value}"]
-        for name, value in sorted(self.gauges.items()):
-            lines += [f"# TYPE {name} gauge", f"{name} {value}"]
-        for name, samples in sorted(self._latency.items()):
-            lines.append(f"# TYPE {name} summary")
-            total = float(sum(samples))
-            lines += [
-                f'{name}{{quantile="0.5"}} {self.percentile(name, 50)}',
-                f'{name}{{quantile="0.95"}} {self.percentile(name, 95)}',
-                f"{name}_sum {total}",
-                f"{name}_count {len(samples)}",
-            ]
-        return "\n".join(lines) + ("\n" if lines else "")
+        """渲染 Prometheus 抓取文本（官方 generate_latest）。"""
+        return generate_latest(self._registry).decode("utf-8")

@@ -1,9 +1,10 @@
 // 知识库管理（CONTEXT.md：用户作用域的医疗来源集合；列表 + 新建对话框）。
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Database, Pencil } from "lucide-react";
+import { Database } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { AdminPageHeader } from "../../components/admin-page-header";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -20,7 +21,8 @@ import { DataTable } from "../../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { AppTableFeatures } from "../../lib/table";
 import type { KnowledgeBase } from "../../lib/types";
-import { adminKeys, adminMutations, knowledgeBasesQueryOptions } from "../../lib/queries";
+import { adminKeys, knowledgeBasesQueryOptions } from "../../lib/queries";
+import { createKnowledgeBase } from "../../lib/api";
 import { relativeTime } from "../../lib/format";
 
 export function KnowledgeListScreen() {
@@ -28,10 +30,10 @@ export function KnowledgeListScreen() {
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data = [], isPending } = useQuery(knowledgeBasesQueryOptions());
+  const { data = [], isError, isPending, refetch } = useQuery(knowledgeBasesQueryOptions());
 
   const createMutation = useMutation({
-    mutationFn: adminMutations.createKnowledgeBase,
+    mutationFn: createKnowledgeBase,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminKeys.knowledgeBases });
       setCreateOpen(false);
@@ -60,28 +62,28 @@ export function KnowledgeListScreen() {
           </Link>
         ),
       },
-      { accessorKey: "documentCount", header: "文档数", cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span> },
-      { accessorKey: "updatedAt", header: "更新时间", cell: (info) => relativeTime(info.getValue<string>()) },
+      {
+        accessorKey: "documentCount",
+        header: "文档数",
+        cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span>,
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "更新时间",
+        cell: (info) => relativeTime(info.getValue<string>()),
+      },
     ],
     [],
   );
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-panel text-muted-foreground">
-            <Database className="size-4" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-heading-lg font-semibold text-ink">知识库管理</h1>
-            <p className="mt-1 max-w-[60ch] text-body-sm text-muted-foreground">管理所有知识库及其文档。上传的医疗来源经摄取后成为可检索的分块。</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button onClick={() => setCreateOpen(true)}>新建知识库</Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        icon={Database}
+        title="知识库管理"
+        description="管理所有知识库及其文档。上传的医疗来源经摄取后成为可检索的分块。"
+        actions={<Button onClick={() => setCreateOpen(true)}>新建知识库</Button>}
+      />
       <div className="mb-3 flex items-center gap-3">
         <Input
           aria-label="搜索知识库名称"
@@ -98,13 +100,12 @@ export function KnowledgeListScreen() {
         columns={columns}
         data={filtered}
         loading={isPending}
+        error={isError}
+        onRetry={() => void refetch()}
         emptyTitle={query ? "没有匹配的知识库" : "还没有知识库"}
-        emptyDescription={query ? "换个关键词试试。" : "点击右上角「新建知识库」，导入第一批医疗来源。"}
-        renderRowActions={() => (
-          <Button variant="ghost" size="icon" aria-label="编辑知识库" disabled title="该操作待后端接入后可用">
-            <Pencil />
-          </Button>
-        )}
+        emptyDescription={
+          query ? "换个关键词试试。" : "点击右上角「新建知识库」，导入第一批医疗来源。"
+        }
       />
 
       <CreateKnowledgeBaseDialog
@@ -173,7 +174,9 @@ function CreateKnowledgeBaseDialog({
               aria-describedby={nameError ? "kb-name-error" : undefined}
             />
             {nameError ? (
-              <p id="kb-name-error" className="text-caption text-error">{nameError}</p>
+              <p id="kb-name-error" className="text-caption text-error">
+                {nameError}
+              </p>
             ) : null}
           </div>
           <div className="grid gap-1.5">
@@ -188,7 +191,9 @@ function CreateKnowledgeBaseDialog({
           </div>
         </form>
         <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>取消</Button>
+          <Button variant="secondary" onClick={onClose}>
+            取消
+          </Button>
           <Button type="button" onClick={validateAndSubmit} disabled={pending}>
             {pending ? "创建中…" : "创建"}
           </Button>

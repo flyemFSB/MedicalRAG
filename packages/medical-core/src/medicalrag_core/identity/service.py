@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import uuid
-
+from ..ids import uuid7
 from .ports import PasswordHasher, UserRepository
 from .user import User
 
@@ -17,18 +16,21 @@ class InvalidCredentialsError(ValueError):
 
 
 class IdentityService:
-    """用户注册与身份认证服务；校验成功后返回 user_id，会话创建交由调用方（API 层）通过 SessionManager 处理。"""
+    """用户注册与身份认证服务；校验成功后返回 user_id，会话签发交由调用方（API 组合根）处理。"""
 
     def __init__(self, users: UserRepository, passwords: PasswordHasher) -> None:
         self._users = users
         self._passwords = passwords
+        # 用端口自身生成哑哈希（不耦合具体算法格式）；对未知邮箱也执行一次真实代价的
+        # 哈希校验，抹平响应时序差，与统一报错文案共同实现防用户枚举
+        self._dummy_hash = passwords.hash("medicalrag:timing-equalizer")
 
     async def register(self, email: str, password: str) -> str:
         """创建新用户并执行密码哈希加密；邮箱已存在时抛出 DuplicateUserError。"""
         if await self._users.get_by_email(email) is not None:
             raise DuplicateUserError(email)
         user = User(
-            id=str(uuid.uuid7()),
+            id=str(uuid7()),
             email=email,
             password_hash=self._passwords.hash(password),
         )
@@ -38,10 +40,9 @@ class IdentityService:
     async def authenticate(self, email: str, password: str) -> str:
         """校验用户凭据并返回 user_id；凭据无效时抛出 InvalidCredentialsError。"""
         user = await self._users.get_by_email(email)
-        if user is None or not self._passwords.verify(password, user.password_hash):
+        if user is None:
+            self._passwords.verify(password, self._dummy_hash)
+            raise InvalidCredentialsError(email)
+        if not self._passwords.verify(password, user.password_hash):
             raise InvalidCredentialsError(email)
         return user.id
-
-    async def get_user(self, user_id: str) -> User | None:
-        """根据 ID 获取用户信息（供 /me 等需要用户实体的端点使用）。"""
-        return await self._users.get_by_id(user_id)

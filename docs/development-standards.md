@@ -1,6 +1,6 @@
 # MedicalRAG 开发规范（强制）
 
-> 规范性文档：实现阶段所有 Python/TypeScript 代码必须遵守。来源：`docs/research/python-backend-and-data-stack.md` §14、`docs/research/monorepo-best-practices.md`、`docs/research/agent-and-frontend-stack.md` 的官方结论提炼，以及 ADR 0025/0060。术语约束见 [CONTEXT.md](../CONTEXT.md)（本文件不重复清单，必须引用）。
+> 规范性文档：实现阶段所有 Python/TypeScript 代码必须遵守。依据 ADR 0025/0060 与仓库既有约定提炼。术语约束见 [CONTEXT.md](../CONTEXT.md)（本文件不重复清单，必须引用）。
 
 ## 0. 总则
 
@@ -33,7 +33,10 @@
 ### 1.4 异步与资源
 - `async def` 内所有 I/O 必须可 await 或明确隔离；禁止在事件循环内直接调用同步 HTTP client、阻塞文件扫描、CPU 密集解析（用 `def`/`anyio.to_thread`）。
 - 所有连接池、session、consumer、producer、PubSub、background task 必须有创建者、所有者、关闭路径；在 `lifespan`/shutdown 清理。
-- 取消异常、超时、进程关闭必须可回收资源；不吞 cancellation 并无限重试。
+- 取消异常、超时、进程关闭必须可回收资源；**禁止吞 `asyncio.CancelledError`**（会破坏 TaskGroup/timeout 内部机制；需要兜底时 re-raise，并只在明确的收尾路径 `await` 任务）。
+- **一个并发任务一个 `AsyncSession`**：禁止 `asyncio.gather` 等路径共用同一 session；禁止在 asyncio 下触发隐式 lazy-load IO（改用 `selectinload`/`joinedload`/`awaitable_attrs`）。
+- `asyncio.create_task` 只持弱引用：必须保存任务引用或改用 `asyncio.TaskGroup`，禁止无引用 fire-and-forget。
+- FastAPI yield 依赖里 catch 后必须 re-raise（或抛 `HTTPException`），否则客户端 500 但服务端无日志；资源关闭用 `lifespan`，不用已废弃的 `on_event`。
 
 ### 1.5 格式与工具
 - `src` layout；类型标注 + 显式返回类型。
@@ -59,7 +62,8 @@
 ## 3. 日志与可观测（红线）
 
 - 结构化日志 + 指标 + 健康检查；**不铺自定义 Trace**（无 OTel SDK/Collector/Tempo/Grafana，ADR 0062）。
-- 日志用 **loguru**（ADR 0074 优先三方库）；`safe_bind()` 在绑定前校验字段名——禁用字段与未知字段直接抛 `UnsafeLogField`。
+- 日志用 **loguru**（ADR 0074 优先三方库）；字段白名单（`SAFE_FIELDS`）在唯一输出汇聚点 `_format` 强制——白名单外的 `extra` 字段一律不落盘，直接 `logger.bind(...)` 绕过绑定层也拦得住。
+- 生产 sink 必须 `diagnose=False`（`configure()` 已钉）：禁止把异常帧局部变量写进日志；若日后加文件 sink，权限 `0o600`。用户可控文本不得当作 loguru format 串。
 - **永不写日志/观测**：raw prompts、文档正文、evidence 文本、患者标识、凭据、cookie、授权头、provider 响应体、隐藏 chain-of-thought。
 - 关联字段：`request_id`/`run_id`/`workspace_id`/`job_id`/`event_id`；`run_id` 是业务真相，`langfuse_trace_id` 仅关联。
 - Langfuse 只记脱敏元数据且 fail-open；Aegra 是唯一 Langfuse 摄取 owner，应用不初始化 Langfuse client。
@@ -75,3 +79,4 @@
 
 - 配置启动 fail fast；生产用 secrets；超时/pool/retry/backoff/并发度可审计。
 - 镜像与包版本锁定（见 [version-baseline.md](version-baseline.md)）；禁 `latest`。
+- PR 级安全门禁（`.github/workflows/ci.yml` security job）：gitleaks 密钥扫描 + `pip-audit`（lock 导出，`--strict`，`--all-packages` 防空审计假绿）+ `pnpm -r audit --prod`。silence scanner 或只改版本号不算修复。

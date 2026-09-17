@@ -4,7 +4,6 @@ from medicalrag_core.chat.run_state import (
     ChatRunEvent,
     ChatRunState,
     InvalidChatRunTransition,
-    is_terminal,
     transition,
 )
 
@@ -17,7 +16,6 @@ def test_normal_grounded_path_reaches_completed():
     state = transition(state, ChatRunEvent.EVIDENCE_FOUND)
     state = transition(state, ChatRunEvent.MODEL_COMPLETED)
     assert state is ChatRunState.COMPLETED
-    assert is_terminal(state)
 
 
 def test_short_circuit_outcomes_converge_on_completed():
@@ -36,7 +34,6 @@ def test_safety_short_circuit_converges_on_completed():
     state = transition(ChatRunState.ANALYZED, ChatRunEvent.ROUTE_SAFETY)
     assert state is ChatRunState.SAFETY
     assert transition(state, ChatRunEvent.COMPLETE) is ChatRunState.COMPLETED
-    assert not is_terminal(ChatRunState.SAFETY)
 
 
 def test_empty_and_fallback_outcomes_converge_on_completed():
@@ -52,22 +49,11 @@ def test_empty_and_fallback_outcomes_converge_on_completed():
     assert transition(state, ChatRunEvent.COMPLETE) is ChatRunState.COMPLETED
 
 
-def test_failed_only_from_accepted():
-    assert transition(ChatRunState.ACCEPTED, ChatRunEvent.FAILED) is ChatRunState.FAILED
-    assert is_terminal(ChatRunState.FAILED)
-
-
-def test_cancelled_from_memory_loaded_and_generating():
-    assert transition(ChatRunState.MEMORY_LOADED, ChatRunEvent.CANCELLED) is ChatRunState.CANCELLED
-    assert transition(ChatRunState.GENERATING, ChatRunEvent.CANCELLED) is ChatRunState.CANCELLED
-    assert is_terminal(ChatRunState.CANCELLED)
-
-
 def test_undefined_transition_raises():
     for state, event in (
-        (ChatRunState.ACCEPTED, ChatRunEvent.CANCELLED),
         (ChatRunState.ANALYZED, ChatRunEvent.MODEL_COMPLETED),
         (ChatRunState.COMPLETED, ChatRunEvent.MODEL_COMPLETED),
+        (ChatRunState.FAILED, ChatRunEvent.MEMORY_LOADED),
     ):
         try:
             transition(state, event)
@@ -75,11 +61,3 @@ def test_undefined_transition_raises():
             assert exc.args[0] is state
         else:
             raise AssertionError(f"expected InvalidChatRunTransition for {state} + {event}")
-
-
-def test_terminal_states_are_only_completed_failed_cancelled():
-    assert is_terminal(ChatRunState.COMPLETED)
-    assert is_terminal(ChatRunState.FAILED)
-    assert is_terminal(ChatRunState.CANCELLED)
-    assert not is_terminal(ChatRunState.ANALYZED)
-    assert not is_terminal(ChatRunState.GENERATING)

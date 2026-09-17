@@ -1,5 +1,6 @@
-# 本地与 CI 同规则的提交前钩子（ADR 0080）。
+# 与 CI 同规则的提交前钩子。
 # 安装：uv run pre-commit install
+# ruff-pre-commit 会把文件路径直接传给 CLI，依赖 force-exclude 遵守 pyproject 排除。
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -10,8 +11,17 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.0
+    rev: v0.16.6
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+  # 本地钩子：与 CI 同源（scripts/ci/check_package_boundaries.py），避免包边界只在 CI 才发现
+  - repo: local
+    hooks:
+      - id: package-boundaries
+        name: package boundaries（core↛infra/apps、apps 互不 import）
+        entry: uv run python scripts/ci/check_package_boundaries.py
+        language: system
+        pass_filenames: false
+        files: \.py$

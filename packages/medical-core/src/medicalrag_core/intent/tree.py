@@ -1,7 +1,8 @@
 """动态意图树构建与白名单解析。
 
 分类器输出被严格限制为意图树内已启用的叶子节点 ID：对于未知节点或格式错误的分类输出，系统一律不臆造意图。
-本模块负责意图树的内存结构组装、环检测与合法性校验、启用叶子目录维护，以及基于「白名单 + 稳定排序 + 阈值过滤 + Top-N 截断」的确定性解析。
+本模块负责意图树的内存结构组装、环检测与合法性校验、启用叶子目录维护，
+以及基于「白名单 + 稳定排序 + 阈值过滤」的确定性解析。
 """
 
 from __future__ import annotations
@@ -26,10 +27,9 @@ class ScoredIntent:
 
 @dataclass(frozen=True, slots=True)
 class IntentResolution:
-    """意图解析结果：包含白名单命中的有效候选、被剔除的未知节点 ID 列表及对应的意图节点实体。"""
+    """意图解析结果：白名单命中的有效候选（按置信度降序）及对应的意图节点实体。"""
 
     known: tuple[ScoredIntent, ...]
-    unknown: tuple[str, ...]
     nodes: tuple[IntentNode, ...]
 
 
@@ -65,25 +65,17 @@ class IntentTree:
         self,
         candidates: Sequence[ScoredIntent],
         *,
-        top_n: int | None = None,
         threshold: float | None = None,
     ) -> IntentResolution:
-        """执行白名单确定性解析：剔除未知节点 ID，按置信度分数降序排列（同分按 ID 升序决胜），并应用阈值与 Top-N 截断。
-
-        返回的 ``known`` 仅包含树内已启用的叶子节点 ID；未知的节点 ID 记录于 ``unknown`` 中。
+        """执行白名单确定性解析：仅保留树内已启用的叶子候选，按置信度分数降序排列
+        （同分按 ID 升序决胜）并应用阈值过滤。
         """
         eligible = frozenset(n.id for n in self.eligible_leaves())
-        known: list[ScoredIntent] = []
-        unknown: list[str] = []
-        for candidate in candidates:
-            if candidate.node_id in eligible:
-                known.append(candidate)
-            else:
-                unknown.append(candidate.node_id)
-        known.sort(key=lambda c: (-c.score, c.node_id))
+        known = sorted(
+            (c for c in candidates if c.node_id in eligible),
+            key=lambda c: (-c.score, c.node_id),
+        )
         if threshold is not None:
             known = [c for c in known if c.score >= threshold]
-        if top_n is not None:
-            known = known[:top_n]
         nodes = tuple(self._nodes[c.node_id] for c in known)
-        return IntentResolution(tuple(known), tuple(unknown), nodes)
+        return IntentResolution(tuple(known), nodes)

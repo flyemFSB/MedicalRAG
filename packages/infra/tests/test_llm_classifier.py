@@ -46,10 +46,10 @@ def _respond(content: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
 
-async def test_analyze_parses_candidates_slots_and_rewrite():
+async def test_analyze_parses_candidates_and_rewrite():
     payload = {
         "rewritten_question": "高血压的基本信息是什么",
-        "intents": [{"id": "disease-info", "score": 0.9, "slots": {"department": "心内科"}}],
+        "intents": [{"id": "disease-info", "score": 0.9}],
         "guidance": None,
     }
 
@@ -60,7 +60,6 @@ async def test_analyze_parses_candidates_slots_and_rewrite():
     assert analysis.rewritten_question == "高血压的基本信息是什么"
     assert [c.node_id for c in analysis.candidates] == ["disease-info"]
     assert analysis.candidates[0].score == 0.9
-    assert analysis.slots["disease-info"] == {"department": "心内科"}
 
 
 async def test_analyze_preserves_unknown_ids_for_tree_whitelisting():

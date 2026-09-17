@@ -9,8 +9,8 @@ from medicalrag_infra.persistence.models import Base, IntentNodeRow
 
 
 @pytest.fixture
-async def factory() -> async_sessionmaker[AsyncSession]:
-    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite://")
+async def factory(persistence_url: str) -> async_sessionmaker[AsyncSession]:
+    engine, factory = create_engine_and_session_factory(persistence_url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield factory
